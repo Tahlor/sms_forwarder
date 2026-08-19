@@ -1,5 +1,6 @@
 package com.tahlor.smsforwarder;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class MessageFilter {
@@ -12,5 +13,13 @@ final class MessageFilter {
             return false;
         }
         return !codeOnly || SIX_PLUS_DIGITS.matcher(body).find();
+    }
+
+    static String extractCode(String body) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        Matcher matcher = SIX_PLUS_DIGITS.matcher(body);
+        return matcher.find() ? matcher.group() : null;
     }
 }
