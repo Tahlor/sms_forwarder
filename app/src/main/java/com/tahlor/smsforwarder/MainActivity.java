@@ -22,6 +22,7 @@ public final class MainActivity extends Activity {
 
     private EditText destinationInput;
     private CheckBox codeOnlyCheck;
+    private CheckBox codeCopyFollowupCheck;
     private CheckBox enabledCheck;
     private TextView permissionStatus;
     private TextView forwardingStatus;
@@ -75,6 +76,15 @@ public final class MainActivity extends Activity {
         codeOnlyCheck.setPadding(0, dp(8), 0, 0);
         content.addView(codeOnlyCheck);
 
+        codeCopyFollowupCheck = new CheckBox(this);
+        codeCopyFollowupCheck.setText("Also send the extracted code as a second SMS for easy copying");
+        content.addView(codeCopyFollowupCheck);
+
+        TextView followupNote = new TextView(this);
+        followupNote.setText("When a 6+ digit code is found, this sends one additional SMS whose entire body is just the code. Disable this if you only want the full forwarded message. Carrier SMS charges may apply.");
+        followupNote.setPadding(dp(32), 0, 0, dp(6));
+        content.addView(followupNote);
+
         enabledCheck = new CheckBox(this);
         enabledCheck.setText("Enable forwarding");
         content.addView(enabledCheck);
@@ -117,6 +127,7 @@ public final class MainActivity extends Activity {
     private void loadSettings() {
         destinationInput.setText(ForwardingPreferences.destination(this));
         codeOnlyCheck.setChecked(ForwardingPreferences.codeOnly(this));
+        codeCopyFollowupCheck.setChecked(ForwardingPreferences.codeCopyFollowup(this));
         enabledCheck.setChecked(ForwardingPreferences.enabled(this));
     }
 
@@ -127,7 +138,12 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        ForwardingPreferences.saveSettings(this, destination, enabledCheck.isChecked(), codeOnlyCheck.isChecked());
+        ForwardingPreferences.saveSettings(
+                this,
+                destination,
+                enabledCheck.isChecked(),
+                codeOnlyCheck.isChecked(),
+                codeCopyFollowupCheck.isChecked());
         if (enabledCheck.isChecked()) {
             ForwardingPreferences.setStatus(this, "Forwarding enabled; waiting for a matching SMS.");
             requestSmsPermissions();
