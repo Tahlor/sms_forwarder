@@ -8,6 +8,7 @@ final class ForwardingPreferences {
     private static final String KEY_DESTINATION = "destination";
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_CODE_ONLY = "code_only";
+    private static final String KEY_CODE_COPY_FOLLOWUP = "code_copy_followup";
     private static final String KEY_STATUS = "status";
 
     private ForwardingPreferences() {}
@@ -28,15 +29,21 @@ final class ForwardingPreferences {
         return prefs(context).getBoolean(KEY_CODE_ONLY, true);
     }
 
+    static boolean codeCopyFollowup(Context context) {
+        return prefs(context).getBoolean(KEY_CODE_COPY_FOLLOWUP, true);
+    }
+
     static String status(Context context) {
         return prefs(context).getString(KEY_STATUS, "Not configured yet.");
     }
 
-    static void saveSettings(Context context, String destination, boolean enabled, boolean codeOnly) {
+    static void saveSettings(Context context, String destination, boolean enabled, boolean codeOnly,
+                             boolean codeCopyFollowup) {
         prefs(context).edit()
                 .putString(KEY_DESTINATION, destination == null ? "" : destination.trim())
                 .putBoolean(KEY_ENABLED, enabled)
                 .putBoolean(KEY_CODE_ONLY, codeOnly)
+                .putBoolean(KEY_CODE_COPY_FOLLOWUP, codeCopyFollowup)
                 .apply();
     }
 
