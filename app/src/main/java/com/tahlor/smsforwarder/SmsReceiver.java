@@ -63,20 +63,32 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
 
             String forwarded = FORWARD_PREFIX + "\nFrom: " + entry.getKey() + "\n" + body;
+            String extractedCode = MessageFilter.extractCode(body);
+            boolean sendCodeCopy = ForwardingPreferences.codeCopyFollowup(context) && extractedCode != null;
+
             try {
                 SmsManager smsManager = SmsManager.getDefault();
-                ArrayList<String> parts = smsManager.divideMessage(forwarded);
-                if (parts.size() <= 1) {
-                    smsManager.sendTextMessage(destination, null, forwarded, null, null);
+                sendMessage(smsManager, destination, forwarded);
+                if (sendCodeCopy) {
+                    smsManager.sendTextMessage(destination, null, extractedCode, null, null);
+                    ForwardingPreferences.setStatus(context, "Forwarded a matching SMS plus a code-only copy.");
                 } else {
-                    smsManager.sendMultipartTextMessage(destination, null, parts, null, null);
+                    ForwardingPreferences.setStatus(context, "Forwarded a matching SMS successfully.");
                 }
-                ForwardingPreferences.setStatus(context, "Forwarded a matching SMS successfully.");
             } catch (SecurityException e) {
                 ForwardingPreferences.setStatus(context, "Cannot forward: Android denied SMS send permission.");
             } catch (RuntimeException e) {
                 ForwardingPreferences.setStatus(context, "Forwarding failed. Open the app to verify settings and SMS service.");
             }
+        }
+    }
+
+    private static void sendMessage(SmsManager smsManager, String destination, String message) {
+        ArrayList<String> parts = smsManager.divideMessage(message);
+        if (parts.size() <= 1) {
+            smsManager.sendTextMessage(destination, null, message, null, null);
+        } else {
+            smsManager.sendMultipartTextMessage(destination, null, parts, null, null);
         }
     }
 }
