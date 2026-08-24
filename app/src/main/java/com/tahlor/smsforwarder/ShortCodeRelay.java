@@ -12,20 +12,22 @@ final class ShortCodeRelay {
     private ShortCodeRelay() {}
 
     static Command parseCommand(String body) {
-        if (body == null) {
-            return null;
-        }
+        if (body == null) return null;
         Matcher matcher = COMMAND.matcher(body);
-        if (!matcher.matches()) {
-            return null;
-        }
+        if (!matcher.matches()) return null;
         return new Command(matcher.group(1), matcher.group(2).trim());
     }
 
     static boolean sameAddress(String first, String second) {
         String a = digitsOnly(first);
         String b = digitsOnly(second);
-        return !a.isEmpty() && a.equals(b);
+        if (a.isEmpty() || b.isEmpty()) return false;
+        if (a.equals(b)) return true;
+        if (a.length() == 11 && a.startsWith("1") && b.length() == 10)
+            return a.substring(1).equals(b);
+        if (b.length() == 11 && b.startsWith("1") && a.length() == 10)
+            return b.substring(1).equals(a);
+        return false;
     }
 
     static boolean senderIsShortCode(String sender, String shortCode) {
@@ -35,9 +37,7 @@ final class ShortCodeRelay {
     }
 
     private static String digitsOnly(String value) {
-        if (value == null) {
-            return "";
-        }
+        if (value == null) return "";
         return value.replaceAll("[^0-9]", "");
     }
 
