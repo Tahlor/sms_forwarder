@@ -35,8 +35,10 @@ public class ShortCodeRelayTest {
     }
 
     @Test
-    public void comparesControllerAddressesIgnoringFormattingOnly() {
+    public void comparesControllerAddressesAcrossFormattingAndNanpCountryCode() {
         assertTrue(ShortCodeRelay.sameAddress("+1 (801) 555-1212", "+18015551212"));
+        assertTrue(ShortCodeRelay.sameAddress("801-555-1212", "+18015551212"));
+        assertTrue(ShortCodeRelay.sameAddress("+18015551212", "8015551212"));
         assertFalse(ShortCodeRelay.sameAddress("+18015551212", "+18015559999"));
     }
 
