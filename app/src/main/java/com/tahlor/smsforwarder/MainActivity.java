@@ -23,6 +23,8 @@ public final class MainActivity extends Activity {
     private EditText destinationInput;
     private CheckBox codeOnlyCheck;
     private CheckBox codeCopyFollowupCheck;
+    private CheckBox shortCodeRelayCheck;
+    private EditText relayControllerInput;
     private CheckBox enabledCheck;
     private TextView permissionStatus;
     private TextView forwardingStatus;
@@ -39,14 +41,11 @@ public final class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (permissionStatus != null) {
-            refreshStatus();
-        }
+        if (permissionStatus != null) refreshStatus();
     }
 
     private View buildContent() {
         int pad = dp(20);
-
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, pad, pad, pad);
@@ -57,7 +56,7 @@ public final class MainActivity extends Activity {
         content.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("Forwards newly received SMS messages to another phone number. Code-only mode is enabled by default and matches 6+ consecutive digits.");
+        description.setText("Forwards newly received SMS messages and supports a trusted 5-minute shortcode relay.");
         description.setTextSize(16);
         description.setPadding(0, dp(10), 0, dp(18));
         content.addView(description);
@@ -80,13 +79,27 @@ public final class MainActivity extends Activity {
         codeCopyFollowupCheck.setText("Also send the extracted code as a second SMS for easy copying");
         content.addView(codeCopyFollowupCheck);
 
-        TextView followupNote = new TextView(this);
-        followupNote.setText("When a 6+ digit code is found, this sends one additional SMS whose entire body is just the code. Disable this if you only want the full forwarded message. Carrier SMS charges may apply.");
-        followupNote.setPadding(dp(32), 0, 0, dp(6));
-        content.addView(followupNote);
+        shortCodeRelayCheck = new CheckBox(this);
+        shortCodeRelayCheck.setText("Enable trusted [123456] shortcode relay");
+        shortCodeRelayCheck.setPadding(0, dp(12), 0, 0);
+        content.addView(shortCodeRelayCheck);
+
+        TextView controllerLabel = new TextView(this);
+        controllerLabel.setText("Trusted relay-controller number (blank = destination number)");
+        content.addView(controllerLabel);
+
+        relayControllerInput = new EditText(this);
+        relayControllerInput.setHint("Leave blank to use destination number");
+        relayControllerInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        content.addView(relayControllerInput, fullWidth());
+
+        TextView relayNote = new TextView(this);
+        relayNote.setText("Example: from the trusted number, text [711711] Y. The app sends Y to shortcode 711711 and forwards replies from 711711 back for 5 minutes as [711711] <reply>. A new command restarts the 5-minute window.");
+        relayNote.setPadding(dp(32), 0, 0, dp(8));
+        content.addView(relayNote);
 
         enabledCheck = new CheckBox(this);
-        enabledCheck.setText("Enable forwarding");
+        enabledCheck.setText("Enable normal forwarding");
         content.addView(enabledCheck);
 
         Button save = new Button(this);
@@ -109,7 +122,7 @@ public final class MainActivity extends Activity {
         content.addView(forwardingStatus);
 
         TextView warning = new TextView(this);
-        warning.setText("Security note: forwarded verification codes are sensitive. Verify the destination number before enabling forwarding. This app has no Internet permission and does not read SMS history.");
+        warning.setText("Security note: only the configured trusted controller can issue shortcode relay commands. This app has no Internet permission and does not read SMS history.");
         warning.setPadding(0, dp(18), 0, 0);
         content.addView(warning);
 
@@ -119,8 +132,7 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams fullWidth() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+        return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
@@ -128,27 +140,31 @@ public final class MainActivity extends Activity {
         destinationInput.setText(ForwardingPreferences.destination(this));
         codeOnlyCheck.setChecked(ForwardingPreferences.codeOnly(this));
         codeCopyFollowupCheck.setChecked(ForwardingPreferences.codeCopyFollowup(this));
+        shortCodeRelayCheck.setChecked(ForwardingPreferences.shortCodeRelayEnabled(this));
+        relayControllerInput.setText(ForwardingPreferences.relayControllerOverride(this));
         enabledCheck.setChecked(ForwardingPreferences.enabled(this));
     }
 
     private void saveSettings() {
         String destination = destinationInput.getText().toString().trim();
+        String controller = relayControllerInput.getText().toString().trim();
         if (enabledCheck.isChecked() && destination.isEmpty()) {
-            Toast.makeText(this, "Enter a destination number before enabling forwarding.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Enter a destination number before enabling normal forwarding.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (shortCodeRelayCheck.isChecked() && destination.isEmpty() && controller.isEmpty()) {
+            Toast.makeText(this, "Enter a destination or trusted controller number before enabling shortcode relay.", Toast.LENGTH_LONG).show();
             return;
         }
 
-        ForwardingPreferences.saveSettings(
-                this,
-                destination,
-                enabledCheck.isChecked(),
-                codeOnlyCheck.isChecked(),
-                codeCopyFollowupCheck.isChecked());
-        if (enabledCheck.isChecked()) {
-            ForwardingPreferences.setStatus(this, "Forwarding enabled; waiting for a matching SMS.");
+        ForwardingPreferences.saveSettings(this, destination, enabledCheck.isChecked(),
+                codeOnlyCheck.isChecked(), codeCopyFollowupCheck.isChecked(),
+                shortCodeRelayCheck.isChecked(), controller);
+        if (enabledCheck.isChecked() || shortCodeRelayCheck.isChecked()) {
+            ForwardingPreferences.setStatus(this, "SMS features enabled; waiting for messages.");
             requestSmsPermissions();
         } else {
-            ForwardingPreferences.setStatus(this, "Forwarding disabled.");
+            ForwardingPreferences.setStatus(this, "SMS features disabled.");
         }
         refreshStatus();
         Toast.makeText(this, "Settings saved.", Toast.LENGTH_SHORT).show();
@@ -156,13 +172,10 @@ public final class MainActivity extends Activity {
 
     private void requestSmsPermissions() {
         List<String> missing = new ArrayList<>();
-        if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED)
             missing.add(Manifest.permission.RECEIVE_SMS);
-        }
-        if (checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
+        if (checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED)
             missing.add(Manifest.permission.SEND_SMS);
-        }
-
         if (missing.isEmpty()) {
             Toast.makeText(this, "SMS permissions are already granted.", Toast.LENGTH_SHORT).show();
             refreshStatus();
@@ -176,9 +189,8 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == SMS_PERMISSION_REQUEST) {
             refreshStatus();
-            if (!allSmsPermissionsGranted()) {
-                Toast.makeText(this, "Both receive and send SMS permissions are required for forwarding.", Toast.LENGTH_LONG).show();
-            }
+            if (!allSmsPermissionsGranted())
+                Toast.makeText(this, "Both receive and send SMS permissions are required.", Toast.LENGTH_LONG).show();
         }
     }
 
