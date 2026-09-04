@@ -41,9 +41,39 @@ The settings screen has an **Update app** button. It opens this stable URL in th
 https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk
 ```
 
-Archimedes should publish the newest verified APK at that URL using the **same signing key as the installed app**, so Android can install it as an in-place update. The forwarder itself does not download the APK and therefore does not need Internet permission; Android hands the URL to the browser via `ACTION_VIEW`.
+Archimedes must publish the newest verified APK at that URL using the **same persistent signing key as every prior canonical build**, so Android can install it as an in-place update. The forwarder itself does not download the APK and therefore does not need Internet permission; Android hands the URL to the browser via `ACTION_VIEW`.
 
-Do not point the update button at the GitHub Actions debug artifact unless its signer is deliberately made identical to the production/tester signer. A mismatched signer cannot update an existing installation.
+### Signing/update invariant
+
+Android updates require all of the following:
+
+1. the same application ID (`com.tahlor.smsforwarder`);
+2. the same signing certificate as the installed canonical build;
+3. a strictly higher `versionCode` for each newer release.
+
+The repository now enforces explicit signing for release builds. `assembleRelease`/`bundleRelease` fail unless the persistent signer is configured through either `local.properties`:
+
+```properties
+release.storeFile=/absolute/path/to/sms-forwarder-release.jks
+release.storePassword=...
+release.keyAlias=sms-forwarder
+release.keyPassword=...
+```
+
+or the equivalent environment variables:
+
+```text
+SMS_FORWARDER_KEYSTORE
+SMS_FORWARDER_STORE_PASSWORD
+SMS_FORWARDER_KEY_ALIAS
+SMS_FORWARDER_KEY_PASSWORD
+```
+
+The keystore and passwords must never be committed. Archimedes should keep the keystore in durable private host storage, record its SHA-256 certificate fingerprint in the deployment report, and verify every newly published APK has that same fingerprint before replacing the stable latest URL.
+
+If an older installed copy was signed by a different/unknown key, migration requires **one uninstall/reinstall**: uninstall the old copy, install the canonical persistent-key APK, and then retain that signing lineage forever. Do not migrate users onto a temporary/debug signer merely to make one installation succeed.
+
+Do not point the update button at the GitHub Actions debug artifact unless its signer is deliberately made identical to the canonical signer. A mismatched signer cannot update an existing installation.
 
 ## Privacy / security
 
@@ -59,17 +89,21 @@ Do not point the update button at the GitHub Actions debug artifact unless its s
 
 Requires Java 17-compatible Android build tooling and Android SDK 35.
 
+For normal CI/debug validation:
+
 ```bash
 gradle testDebugUnitTest assembleDebug
 ```
 
-The debug APK is written to:
+For a canonical publishable build on Archimedes, configure the persistent signer above and run:
 
-```text
-app/build/outputs/apk/debug/app-debug.apk
+```bash
+gradle testDebugUnitTest assembleRelease
 ```
 
-GitHub Actions also builds every push to `master` and uploads the APK as the `sms-code-forwarder-apk` workflow artifact.
+The publishable release APK is under `app/build/outputs/apk/release/`. Verify its package, version, SHA-256, permissions, and signing certificate fingerprint before publishing it.
+
+GitHub Actions builds every push to `master` and uploads a debug APK as test/build evidence. It is not the canonical update artifact unless explicitly configured with the same persistent signer.
 
 ## Install / configure
 
