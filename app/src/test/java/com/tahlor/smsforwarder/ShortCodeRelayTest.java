@@ -14,23 +14,30 @@ public class ShortCodeRelayTest {
         assertEquals("711711", command.shortCode);
         assertEquals("Y", command.payload);
 
-        command = ShortCodeRelay.parseCommand("[123456] hello there");
-        assertEquals("123456", command.shortCode);
+        command = ShortCodeRelay.parseCommand("[711-711] hello there");
+        assertEquals("711711", command.shortCode);
         assertEquals("hello there", command.payload);
     }
 
     @Test
     public void permitsEmptyPayloadToOpenReplyWindow() {
-        ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[711711]   ");
+        ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[711-711]   ");
         assertEquals("711711", command.shortCode);
         assertEquals("", command.payload);
+    }
+
+    @Test
+    public void formatsSixDigitShortcodesToAvoidOtpConfusion() {
+        assertEquals("711-711", ShortCodeRelay.formatShortCode("711711"));
+        assertEquals("711-711", ShortCodeRelay.formatSenderForDisplay("711711"));
+        assertEquals("+18015551212", ShortCodeRelay.formatSenderForDisplay("+18015551212"));
     }
 
     @Test
     public void rejectsNonSixDigitOrUnbracketedTargets() {
         assertNull(ShortCodeRelay.parseCommand("711711 Y"));
         assertNull(ShortCodeRelay.parseCommand("[71171] Y"));
-        assertNull(ShortCodeRelay.parseCommand("[7117111] Y"));
+        assertNull(ShortCodeRelay.parseCommand("[711-7111] Y"));
         assertNull(ShortCodeRelay.parseCommand(null));
     }
 
