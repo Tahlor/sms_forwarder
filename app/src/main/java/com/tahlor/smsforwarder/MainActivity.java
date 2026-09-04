@@ -2,7 +2,10 @@ package com.tahlor.smsforwarder;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.View;
@@ -19,6 +22,8 @@ import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final int SMS_PERMISSION_REQUEST = 1001;
+    private static final String LATEST_APK_URL =
+            "https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk";
 
     private EditText destinationInput;
     private CheckBox codeOnlyCheck;
@@ -80,7 +85,7 @@ public final class MainActivity extends Activity {
         content.addView(codeCopyFollowupCheck);
 
         shortCodeRelayCheck = new CheckBox(this);
-        shortCodeRelayCheck.setText("Enable trusted [123456] shortcode relay");
+        shortCodeRelayCheck.setText("Enable trusted [123-456] shortcode relay");
         shortCodeRelayCheck.setPadding(0, dp(12), 0, 0);
         content.addView(shortCodeRelayCheck);
 
@@ -94,7 +99,7 @@ public final class MainActivity extends Activity {
         content.addView(relayControllerInput, fullWidth());
 
         TextView relayNote = new TextView(this);
-        relayNote.setText("Example: from the trusted number, text [711711] Y. The app sends Y to shortcode 711711 and forwards replies from 711711 back for 5 minutes as [711711] <reply>. A new command restarts the 5-minute window.");
+        relayNote.setText("Example: text [711-711] Y. The app sends Y to shortcode 711711 and forwards replies back for 5 minutes as [711-711] <reply>. The undashed [711711] form is also accepted for compatibility.");
         relayNote.setPadding(dp(32), 0, 0, dp(8));
         content.addView(relayNote);
 
@@ -111,6 +116,16 @@ public final class MainActivity extends Activity {
         permissions.setText("Grant SMS permissions");
         permissions.setOnClickListener(v -> requestSmsPermissions());
         content.addView(permissions, fullWidth());
+
+        Button update = new Button(this);
+        update.setText("Update app");
+        update.setOnClickListener(v -> openLatestApk());
+        content.addView(update, fullWidth());
+
+        TextView updateNote = new TextView(this);
+        updateNote.setText("Opens the latest Archimedes-signed APK in your browser. The forwarder itself keeps no Internet permission.");
+        updateNote.setPadding(0, 0, 0, dp(8));
+        content.addView(updateNote);
 
         permissionStatus = new TextView(this);
         permissionStatus.setPadding(0, dp(14), 0, 0);
@@ -182,6 +197,14 @@ public final class MainActivity extends Activity {
             return;
         }
         requestPermissions(missing.toArray(new String[0]), SMS_PERMISSION_REQUEST);
+    }
+
+    private void openLatestApk() {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(LATEST_APK_URL)));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No browser is available to open the update link.", Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
