@@ -2,11 +2,13 @@ package com.tahlor.smsforwarder;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
@@ -25,28 +27,40 @@ public final class MainActivity extends Activity {
     private static final String LATEST_APK_URL =
             "https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk";
 
-    private EditText destinationInput;
+    private EditText numberInput;
+    private CheckBox forwardEnabledCheck;
     private CheckBox codeOnlyCheck;
     private CheckBox codeCopyFollowupCheck;
-    private CheckBox shortCodeRelayCheck;
-    private EditText relayControllerInput;
-    private CheckBox enabledCheck;
+    private CheckBox relayEnabledCheck;
+    private LinearLayout profilesContainer;
     private TextView permissionStatus;
+    private TextView permissionHelp;
     private TextView forwardingStatus;
+    private boolean returningFromAppSettings;
+    private boolean requestedPermissionsThisLaunch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("SMS Code Forwarder");
-        setContentView(buildContent());
-        loadSettings();
+        View content = buildContent();
+        setContentView(content);
+        resetProfileEditor();
+        refreshProfiles();
         refreshStatus();
+        content.post(this::requestMissingPermissionsOnLaunch);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (permissionStatus != null) refreshStatus();
+        if (returningFromAppSettings) {
+            returningFromAppSettings = false;
+            if (!allSmsPermissionsGranted()) {
+                permissionStatus.post(() -> requestSmsPermissions(false));
+            }
+        }
     }
 
     private View buildContent() {
@@ -61,84 +75,106 @@ public final class MainActivity extends Activity {
         content.addView(title);
 
         TextView description = new TextView(this);
-        description.setText("Forwards newly received SMS messages and supports a trusted 5-minute shortcode relay.");
+        description.setText("Register the phone numbers that should receive forwarded messages or control shortcode replies. Each number has its own settings.");
         description.setTextSize(16);
-        description.setPadding(0, dp(10), 0, dp(18));
+        description.setPadding(0, dp(10), 0, dp(16));
         content.addView(description);
 
-        TextView destinationLabel = new TextView(this);
-        destinationLabel.setText("Destination phone number");
-        content.addView(destinationLabel);
+        TextView permissionHeading = heading("SMS access");
+        content.addView(permissionHeading);
 
-        destinationInput = new EditText(this);
-        destinationInput.setHint("e.g. +18015551234");
-        destinationInput.setInputType(InputType.TYPE_CLASS_PHONE);
-        content.addView(destinationInput, fullWidth());
+        permissionStatus = new TextView(this);
+        content.addView(permissionStatus);
+
+        permissionHelp = new TextView(this);
+        permissionHelp.setPadding(0, dp(6), 0, dp(6));
+        content.addView(permissionHelp);
+
+        Button permissions = new Button(this);
+        permissions.setText("Grant send + receive SMS permissions");
+        permissions.setOnClickListener(v -> requestSmsPermissions(true));
+        content.addView(permissions, fullWidth());
+
+        Button restrictedSettings = new Button(this);
+        restrictedSettings.setText("Open App Info / Allow restricted settings");
+        restrictedSettings.setOnClickListener(v -> openAppSettings());
+        content.addView(restrictedSettings, fullWidth());
+
+        TextView profilesHeading = heading("Registered phones");
+        profilesHeading.setPadding(0, dp(18), 0, dp(6));
+        content.addView(profilesHeading);
+
+        profilesContainer = new LinearLayout(this);
+        profilesContainer.setOrientation(LinearLayout.VERTICAL);
+        content.addView(profilesContainer, fullWidth());
+
+        TextView editorHeading = heading("Add or edit phone");
+        editorHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(editorHeading);
+
+        numberInput = new EditText(this);
+        numberInput.setHint("Phone number, e.g. +18015551234");
+        numberInput.setInputType(InputType.TYPE_CLASS_PHONE);
+        content.addView(numberInput, fullWidth());
+
+        forwardEnabledCheck = new CheckBox(this);
+        forwardEnabledCheck.setText("Forward SMS to this number");
+        content.addView(forwardEnabledCheck);
 
         codeOnlyCheck = new CheckBox(this);
         codeOnlyCheck.setText("Only forward messages containing 6+ consecutive digits");
-        codeOnlyCheck.setPadding(0, dp(8), 0, 0);
         content.addView(codeOnlyCheck);
 
         codeCopyFollowupCheck = new CheckBox(this);
-        codeCopyFollowupCheck.setText("Also send the extracted code as a second SMS for easy copying");
+        codeCopyFollowupCheck.setText("Also send extracted code as a second SMS");
         content.addView(codeCopyFollowupCheck);
 
-        shortCodeRelayCheck = new CheckBox(this);
-        shortCodeRelayCheck.setText("Enable trusted [123-456] shortcode relay");
-        shortCodeRelayCheck.setPadding(0, dp(12), 0, 0);
-        content.addView(shortCodeRelayCheck);
-
-        TextView controllerLabel = new TextView(this);
-        controllerLabel.setText("Trusted relay-controller number (blank = destination number)");
-        content.addView(controllerLabel);
-
-        relayControllerInput = new EditText(this);
-        relayControllerInput.setHint("Leave blank to use destination number");
-        relayControllerInput.setInputType(InputType.TYPE_CLASS_PHONE);
-        content.addView(relayControllerInput, fullWidth());
+        relayEnabledCheck = new CheckBox(this);
+        relayEnabledCheck.setText("Allow this number to control [711-711] shortcode relay");
+        content.addView(relayEnabledCheck);
 
         TextView relayNote = new TextView(this);
-        relayNote.setText("Example: text [711-711] Y. The app sends Y to shortcode 711711 and forwards replies back for 5 minutes as [711-711] <reply>. The undashed [711711] form is also accepted for compatibility.");
+        relayNote.setText("Example: from a relay-enabled number, text [711-711] Y. This phone sends Y to 711711 and forwards replies back to that same registered number for 5 minutes.");
         relayNote.setPadding(dp(32), 0, 0, dp(8));
         content.addView(relayNote);
 
-        enabledCheck = new CheckBox(this);
-        enabledCheck.setText("Enable normal forwarding");
-        content.addView(enabledCheck);
+        Button saveProfile = new Button(this);
+        saveProfile.setText("Add / update phone");
+        saveProfile.setOnClickListener(v -> saveProfile());
+        content.addView(saveProfile, fullWidth());
 
-        Button save = new Button(this);
-        save.setText("Save settings");
-        save.setOnClickListener(v -> saveSettings());
-        content.addView(save, fullWidth());
+        Button clearEditor = new Button(this);
+        clearEditor.setText("Clear editor");
+        clearEditor.setOnClickListener(v -> resetProfileEditor());
+        content.addView(clearEditor, fullWidth());
 
-        Button permissions = new Button(this);
-        permissions.setText("Grant SMS permissions");
-        permissions.setOnClickListener(v -> requestSmsPermissions());
-        content.addView(permissions, fullWidth());
+        TextView maintenanceHeading = heading("Maintenance");
+        maintenanceHeading.setPadding(0, dp(18), 0, dp(6));
+        content.addView(maintenanceHeading);
 
         Button update = new Button(this);
         update.setText("Update app");
         update.setOnClickListener(v -> openLatestApk());
         content.addView(update, fullWidth());
 
-        TextView updateNote = new TextView(this);
-        updateNote.setText("Opens the latest Archimedes-signed APK in your browser. The forwarder itself keeps no Internet permission.");
-        updateNote.setPadding(0, 0, 0, dp(8));
-        content.addView(updateNote);
+        TextView backupNote = new TextView(this);
+        backupNote.setText("Registered-phone settings participate in Android backup/restore so they can come back after reinstall. Temporary 5-minute relay sessions are never backed up. SMS permissions must be granted again after uninstall.");
+        backupNote.setPadding(0, dp(4), 0, dp(8));
+        content.addView(backupNote);
 
-        permissionStatus = new TextView(this);
-        permissionStatus.setPadding(0, dp(14), 0, 0);
-        content.addView(permissionStatus);
+        Button deleteSetup = new Button(this);
+        deleteSetup.setText("Delete saved setup");
+        deleteSetup.setOnClickListener(v -> confirmDeleteSavedSetup());
+        content.addView(deleteSetup, fullWidth());
 
         forwardingStatus = new TextView(this);
-        forwardingStatus.setPadding(0, dp(8), 0, 0);
+        forwardingStatus.setPadding(0, dp(14), 0, 0);
         forwardingStatus.setTextIsSelectable(true);
         content.addView(forwardingStatus);
 
         TextView warning = new TextView(this);
-        warning.setText("Security note: only the configured trusted controller can issue shortcode relay commands. This app has no Internet permission and does not read SMS history.");
-        warning.setPadding(0, dp(18), 0, 0);
+        warning.setText("This app has no Internet permission and does not read SMS history. Android may require one-time restricted-settings approval because SMS permissions are sensitive.");
+        warning.setPadding(0, dp(16), 0, 0);
         content.addView(warning);
 
         ScrollView scrollView = new ScrollView(this);
@@ -146,57 +182,159 @@ public final class MainActivity extends Activity {
         return scrollView;
     }
 
+    private TextView heading(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(19);
+        return view;
+    }
+
     private LinearLayout.LayoutParams fullWidth() {
         return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
-    private void loadSettings() {
-        destinationInput.setText(ForwardingPreferences.destination(this));
-        codeOnlyCheck.setChecked(ForwardingPreferences.codeOnly(this));
-        codeCopyFollowupCheck.setChecked(ForwardingPreferences.codeCopyFollowup(this));
-        shortCodeRelayCheck.setChecked(ForwardingPreferences.shortCodeRelayEnabled(this));
-        relayControllerInput.setText(ForwardingPreferences.relayControllerOverride(this));
-        enabledCheck.setChecked(ForwardingPreferences.enabled(this));
+    private void resetProfileEditor() {
+        numberInput.setText("");
+        forwardEnabledCheck.setChecked(true);
+        codeOnlyCheck.setChecked(true);
+        codeCopyFollowupCheck.setChecked(true);
+        relayEnabledCheck.setChecked(true);
     }
 
-    private void saveSettings() {
-        String destination = destinationInput.getText().toString().trim();
-        String controller = relayControllerInput.getText().toString().trim();
-        if (enabledCheck.isChecked() && destination.isEmpty()) {
-            Toast.makeText(this, "Enter a destination number before enabling normal forwarding.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (shortCodeRelayCheck.isChecked() && destination.isEmpty() && controller.isEmpty()) {
-            Toast.makeText(this, "Enter a destination or trusted controller number before enabling shortcode relay.", Toast.LENGTH_LONG).show();
-            return;
-        }
+    private void editProfile(PhoneProfile profile) {
+        numberInput.setText(profile.number);
+        forwardEnabledCheck.setChecked(profile.forwardEnabled);
+        codeOnlyCheck.setChecked(profile.codeOnly);
+        codeCopyFollowupCheck.setChecked(profile.codeCopyFollowup);
+        relayEnabledCheck.setChecked(profile.relayEnabled);
+        numberInput.requestFocus();
+    }
 
-        ForwardingPreferences.saveSettings(this, destination, enabledCheck.isChecked(),
-                codeOnlyCheck.isChecked(), codeCopyFollowupCheck.isChecked(),
-                shortCodeRelayCheck.isChecked(), controller);
-        if (enabledCheck.isChecked() || shortCodeRelayCheck.isChecked()) {
-            ForwardingPreferences.setStatus(this, "SMS features enabled; waiting for messages.");
-            requestSmsPermissions();
-        } else {
-            ForwardingPreferences.setStatus(this, "SMS features disabled.");
+    private void saveProfile() {
+        String number = numberInput.getText().toString().trim();
+        if (number.isEmpty()) {
+            Toast.makeText(this, "Enter a phone number.", Toast.LENGTH_LONG).show();
+            return;
         }
+        PhoneProfile profile = new PhoneProfile(number,
+                forwardEnabledCheck.isChecked(),
+                codeOnlyCheck.isChecked(),
+                codeCopyFollowupCheck.isChecked(),
+                relayEnabledCheck.isChecked());
+        if (!profile.hasAnyFeatureEnabled()) {
+            Toast.makeText(this, "Turn on forwarding or shortcode relay for this phone.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        ForwardingPreferences.saveProfile(this, profile);
+        ForwardingPreferences.setStatus(this, "Saved phone profile " + number + ".");
+        resetProfileEditor();
+        refreshProfiles();
         refreshStatus();
-        Toast.makeText(this, "Settings saved.", Toast.LENGTH_SHORT).show();
+        if (!allSmsPermissionsGranted()) requestSmsPermissions(false);
+        Toast.makeText(this, "Phone profile saved.", Toast.LENGTH_SHORT).show();
     }
 
-    private void requestSmsPermissions() {
+    private void refreshProfiles() {
+        profilesContainer.removeAllViews();
+        List<PhoneProfile> profiles = ForwardingPreferences.profiles(this);
+        if (profiles.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("No phones registered yet.");
+            profilesContainer.addView(empty);
+            return;
+        }
+
+        for (PhoneProfile profile : profiles) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(0, dp(6), 0, dp(10));
+
+            TextView summary = new TextView(this);
+            summary.setText(profile.summary());
+            summary.setTextIsSelectable(true);
+            card.addView(summary);
+
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+
+            Button edit = new Button(this);
+            edit.setText("Edit");
+            edit.setOnClickListener(v -> editProfile(profile));
+            actions.addView(edit, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            Button remove = new Button(this);
+            remove.setText("Remove");
+            remove.setOnClickListener(v -> confirmRemoveProfile(profile));
+            actions.addView(remove, new LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            card.addView(actions, fullWidth());
+            profilesContainer.addView(card, fullWidth());
+        }
+    }
+
+    private void confirmRemoveProfile(PhoneProfile profile) {
+        new AlertDialog.Builder(this)
+                .setTitle("Remove phone?")
+                .setMessage("Remove " + profile.number + " and its forwarding/relay settings?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (dialog, which) -> {
+                    ForwardingPreferences.removeProfile(this, profile.number);
+                    refreshProfiles();
+                    refreshStatus();
+                })
+                .show();
+    }
+
+    private void confirmDeleteSavedSetup() {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete saved setup?")
+                .setMessage("This removes every registered phone and requests that Android backup the deleted state. It does not revoke SMS permissions.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete", (dialog, which) -> {
+                    ForwardingPreferences.deleteSavedSetup(this);
+                    resetProfileEditor();
+                    refreshProfiles();
+                    refreshStatus();
+                    Toast.makeText(this, "Saved setup deleted.", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    private void requestMissingPermissionsOnLaunch() {
+        if (!allSmsPermissionsGranted() && !requestedPermissionsThisLaunch) {
+            requestedPermissionsThisLaunch = true;
+            requestSmsPermissions(false);
+        }
+    }
+
+    private void requestSmsPermissions(boolean userInitiated) {
         List<String> missing = new ArrayList<>();
         if (checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED)
             missing.add(Manifest.permission.RECEIVE_SMS);
         if (checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED)
             missing.add(Manifest.permission.SEND_SMS);
         if (missing.isEmpty()) {
-            Toast.makeText(this, "SMS permissions are already granted.", Toast.LENGTH_SHORT).show();
+            if (userInitiated)
+                Toast.makeText(this, "Send and receive SMS permissions are already granted.", Toast.LENGTH_SHORT).show();
             refreshStatus();
             return;
         }
         requestPermissions(missing.toArray(new String[0]), SMS_PERMISSION_REQUEST);
+    }
+
+    private void openAppSettings() {
+        try {
+            returningFromAppSettings = true;
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (ActivityNotFoundException e) {
+            returningFromAppSettings = false;
+            Toast.makeText(this, "Could not open App Info.", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void openLatestApk() {
@@ -212,8 +350,11 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == SMS_PERMISSION_REQUEST) {
             refreshStatus();
-            if (!allSmsPermissionsGranted())
-                Toast.makeText(this, "Both receive and send SMS permissions are required.", Toast.LENGTH_LONG).show();
+            if (!allSmsPermissionsGranted()) {
+                Toast.makeText(this,
+                        "SMS access is still blocked. For a sideloaded app, open App Info, tap the top-right menu, choose Allow restricted settings, then return here.",
+                        Toast.LENGTH_LONG).show();
+            }
         }
     }
 
@@ -225,8 +366,13 @@ public final class MainActivity extends Activity {
     private void refreshStatus() {
         boolean receive = checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean send = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
-        permissionStatus.setText("Permissions — receive: " + (receive ? "granted" : "missing")
-                + ", send: " + (send ? "granted" : "missing"));
+        permissionStatus.setText("Receive SMS: " + (receive ? "granted" : "missing")
+                + "   •   Send SMS: " + (send ? "granted" : "missing"));
+        if (receive && send) {
+            permissionHelp.setText("SMS access is ready.");
+        } else {
+            permissionHelp.setText("Both permissions are required. If Android refuses the permission prompt because this APK was sideloaded: open App Info below → top-right ⋮ menu → Allow restricted settings → return to the app. The permission prompt will retry automatically.");
+        }
         forwardingStatus.setText("Status: " + ForwardingPreferences.status(this));
     }
 
