@@ -51,7 +51,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
             if (!MessageFilter.shouldForward(body, ForwardingPreferences.codeOnly(context))) continue;
 
-            String forwarded = FORWARD_PREFIX + "\nFrom: " + sender + "\n" + body;
+            String displaySender = ShortCodeRelay.formatSenderForDisplay(sender);
+            String forwarded = FORWARD_PREFIX + "\nFrom: " + displaySender + "\n" + body;
             String extractedCode = MessageFilter.extractCode(body);
             boolean sendCodeCopy = ForwardingPreferences.codeCopyFollowup(context) && extractedCode != null;
 
@@ -86,15 +87,16 @@ public final class SmsReceiver extends BroadcastReceiver {
                 ForwardingPreferences.setStatus(context, "Cannot relay shortcode command: SEND_SMS permission is missing.");
                 return true;
             }
+            String displayCode = ShortCodeRelay.formatShortCode(command.shortCode);
             try {
                 ForwardingPreferences.startShortCodeRelay(context, command.shortCode, now);
                 if (!command.payload.isEmpty()) {
                     sendMessage(SmsManager.getDefault(), command.shortCode, command.payload);
                     ForwardingPreferences.setStatus(context,
-                            "Sent to shortcode " + command.shortCode + "; forwarding replies for 5 minutes.");
+                            "Sent to shortcode " + displayCode + "; forwarding replies for 5 minutes.");
                 } else {
                     ForwardingPreferences.setStatus(context,
-                            "Opened a 5-minute reply window for shortcode " + command.shortCode + ".");
+                            "Opened a 5-minute reply window for shortcode " + displayCode + ".");
                 }
             } catch (SecurityException e) {
                 ForwardingPreferences.setStatus(context, "Android denied the shortcode SMS send.");
@@ -110,11 +112,12 @@ public final class SmsReceiver extends BroadcastReceiver {
                 ForwardingPreferences.setStatus(context, "Cannot relay shortcode reply: SEND_SMS permission is missing.");
                 return true;
             }
+            String displayCode = ShortCodeRelay.formatShortCode(activeShortCode);
             try {
-                String relayed = "[" + activeShortCode + "] " + body;
+                String relayed = "[" + displayCode + "] " + body;
                 sendMessage(SmsManager.getDefault(), controller, relayed);
                 ForwardingPreferences.setStatus(context,
-                        "Relayed a reply from shortcode " + activeShortCode + ".");
+                        "Relayed a reply from shortcode " + displayCode + ".");
             } catch (SecurityException e) {
                 ForwardingPreferences.setStatus(context, "Android denied forwarding the shortcode reply.");
             } catch (RuntimeException e) {
