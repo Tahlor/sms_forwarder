@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <include domain="sharedpref" path="sms_forwarder.xml" />
+    </cloud-backup>
+    <device-to-device>
+        <include domain="sharedpref" path="sms_forwarder.xml" />
+    </device-to-device>
+</data-extraction-rules>
