@@ -2,6 +2,20 @@ plugins {
     id "com.android.application"
 }
 
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { stream ->
+        localProperties.load(stream)
+    }
+}
+
+def releaseStoreFile = localProperties.getProperty("release.storeFile") ?: System.getenv("SMS_FORWARDER_KEYSTORE")
+def releaseStorePassword = localProperties.getProperty("release.storePassword") ?: System.getenv("SMS_FORWARDER_STORE_PASSWORD")
+def releaseKeyAlias = localProperties.getProperty("release.keyAlias") ?: System.getenv("SMS_FORWARDER_KEY_ALIAS")
+def releaseKeyPassword = localProperties.getProperty("release.keyPassword") ?: System.getenv("SMS_FORWARDER_KEY_PASSWORD")
+def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.isBlank() }
+
 android {
     namespace "com.tahlor.smsforwarder"
     compileSdk 35
@@ -14,8 +28,22 @@ android {
         versionName "0.1.3"
     }
 
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
@@ -28,6 +56,18 @@ android {
 
     lint {
         abortOnError true
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "assembleRelease" || task.name == "bundleRelease") {
+        task.doFirst {
+            if (!hasReleaseSigning) {
+                throw new GradleException(
+                        "Release signing is not configured. Set release.storeFile/release.storePassword/" +
+                        "release.keyAlias/release.keyPassword in local.properties or the SMS_FORWARDER_* environment variables.")
+            }
+        }
     }
 }
 
