@@ -1,5 +1,6 @@
 package com.tahlor.smsforwarder;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,6 +17,14 @@ final class ShortCodeRelay {
         Matcher matcher = COMMAND.matcher(body);
         if (!matcher.matches()) return null;
         return new Command(digitsOnly(matcher.group(1)), matcher.group(2).trim());
+    }
+
+    static PhoneProfile findRegisteredProfile(List<PhoneProfile> profiles, String sender) {
+        if (profiles == null) return null;
+        for (PhoneProfile profile : profiles) {
+            if (profile != null && sameAddress(sender, profile.number)) return profile;
+        }
+        return null;
     }
 
     static String formatShortCode(String shortCode) {

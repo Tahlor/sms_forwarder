@@ -1,108 +1,106 @@
 # SMS Code Forwarder
 
-A tiny sideload-only Android app for forwarding newly received SMS messages to one or more registered phones and relaying short-code conversations.
+A tiny sideload-only Android app for forwarding newly received SMS messages to registered downstream phones and relaying shortcode conversations.
 
-## Registered phone profiles
+## Setup model
 
-The app no longer exposes separate "destination" and "relay controller" numbers. A phone number is registered once and gets its own settings:
+A phone number is registered once. Each registered phone independently controls:
 
-- **Forward SMS to this number**
-- **Only forward messages containing 6+ consecutive digits** (`[0-9]{6,}`)
-- **Also send the extracted code as a second SMS** for easy copying
-- **Allow this number to control `[711-711]` shortcode relay**
+- whether it receives forwarded SMS;
+- whether forwarding is limited to messages containing 6+ consecutive digits (`[0-9]{6,}`);
+- whether it also gets a second SMS containing only the extracted code;
+- whether it can control six-digit SMS shortcodes.
 
-Multiple phones can be registered with different combinations. Existing single-number settings migrate automatically into profiles on upgrade. If the old relay controller was genuinely different from the old destination number, it becomes a second relay-only profile.
+There are no separate destination/controller number fields. Multiple downstream phones are supported by adding another registered phone.
 
-## SMS permission setup
+## Sideload authorization
 
-The app needs only `RECEIVE_SMS` and `SEND_SMS`.
+The app requests only `RECEIVE_SMS` and `SEND_SMS`. On Android 13+, sideloaded apps can have sensitive permissions blocked by Restricted Settings. The app uses one guided **Authorize SMS access** flow:
 
-On launch it automatically requests whichever of those two permissions are missing. These are hard-restricted Android permissions, so a sideloaded APK may also require a one-time installer/user approval:
+1. it requests the two SMS permissions;
+2. if Android blocks them, it explains the one-time App Info → top-right `⋮` → **Allow restricted settings** step;
+3. when the user returns from App Info, the app automatically retries the SMS permission request.
 
-1. Open **App Info** for SMS Code Forwarder.
-2. Open the top-right `⋮` menu.
-3. Choose **Allow restricted settings** if Android presents that option.
-4. Return to SMS Code Forwarder; it immediately retries the missing SMS permission request.
-
-The app includes buttons for both **Grant send + receive SMS permissions** and **Open App Info / Allow restricted settings**. There is no way for a third-party app to silently enable restricted settings itself.
+Android does not expose a public API that lets an app silently toggle **Allow restricted settings** itself. Successful `RECEIVE_SMS` + `SEND_SMS` grants are the app's readiness check. Google documents the restricted-settings flow for sideloaded apps at Android Help.
 
 ## OTP forwarding
 
-By default a forwarding-enabled phone profile forwards only messages containing **6 or more consecutive digits**. If its code-copy option is enabled, the app sends the full forwarded SMS first and then a second SMS whose entire body is the first qualifying digit sequence.
+A forwarding-enabled phone profile normally forwards only messages containing 6+ consecutive digits. If code-copy is enabled, the app sends the full forwarded message and then a second SMS containing only the first qualifying digit sequence.
 
-Six-digit sender/shortcode labels are displayed with a dash so they do not look like a second six-digit verification code. Sender `711711`, for example, is shown as `711-711`; the raw SMS address remains unchanged internally.
+Six-digit sender/shortcode labels are displayed with a dash so they do not look like a second OTP. Sender `711711`, for example, is displayed as `711-711`; the raw SMS address is unchanged internally.
 
-## Trusted shortcode relay
+## Shortcode relay
 
-Any registered phone with shortcode relay enabled can control six-digit SMS short codes through the forwarding phone.
+A registered phone with shortcode control enabled can send this to the phone running the app:
 
 ```text
-[711-711] Y
+[711711] SAVE
 ```
 
-sends only `Y` to raw shortcode `711711` and opens a 5-minute reply window for that registered controller. Replies are sent back as:
+or:
+
+```text
+[711-711] SAVE
+```
+
+The app matches the inbound sender to the registered phone, sends only `SAVE` to raw shortcode `711711`, and opens a 5-minute reply window for that controller. Replies from the shortcode are returned as:
 
 ```text
 [711-711] <reply text>
 ```
 
-The undashed `[711711]` command remains accepted for compatibility. Each registered controller has its own active 5-minute session, and temporary sessions are not included in backup.
+`[711711]` with no payload only opens the reply window. Each registered controller has its own temporary session.
+
+Bracketed shortcode commands are now handled explicitly rather than silently falling through to ordinary forwarding. Runtime status reports whether the command came from an unregistered phone, shortcode control was disabled, `SEND_SMS` was missing, the send was queued, or Android/carrier rejected it synchronously.
+
+## In-app examples / diagnostics
+
+The **Examples & help** page shows:
+
+- current Receive/Send SMS permission state;
+- every registered phone and its enabled behaviors;
+- the latest runtime status;
+- copyable examples for OTP forwarding, `[711711] SAVE`, reply windows, multiple phone profiles, and restricted-settings troubleshooting.
 
 ## Settings persistence and deletion
 
-Registered-phone configuration is stored separately from runtime state and participates in Android's supported backup/restore infrastructure. The manifest enables backup and explicitly includes only `sms_forwarder.xml`; transient status text and active shortcode sessions live in `sms_forwarder_runtime.xml` and are excluded.
+Registered-phone configuration participates in Android backup/restore. Only durable configuration is backed up; transient status and active 5-minute relay sessions are kept separately and excluded. Uninstall clears SMS permissions, so authorization must be granted again.
 
-This means Android can normally restore the user's registered phones after uninstall/reinstall or device migration when backup/restore is available. Android controls the backup transport and timing, so this cannot be made an absolute guarantee for every device/account. SMS permissions are cleared by uninstall and must be granted again.
-
-The app has an explicit **Delete saved setup** action. It clears all registered-phone configuration, stores a deletion marker, clears runtime state, and notifies Android's backup manager that the backed-up state changed.
+**Delete saved setup** clears the registered phones and runtime state and notifies Android Backup Manager of the deletion.
 
 ## Updating the app
 
-The settings screen has an **Update app** button that opens:
+**Update app** opens:
 
 ```text
 https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk
 ```
 
-in the device browser. The forwarder itself therefore keeps **no Internet permission**.
+in the device browser. The app itself therefore retains no Internet permission.
 
-### Signing/update invariant
-
-Android updates require all of the following:
-
-1. the same application ID (`com.tahlor.smsforwarder`);
-2. the same signing certificate as the installed canonical build;
-3. a strictly higher `versionCode` for each newer release.
-
-Canonical releases must be signed with one persistent key. `assembleRelease` and `bundleRelease` fail if release signing credentials are absent. Archimedes should publish only that persistently signed release APK at the stable update URL, always with a higher `versionCode`, so Android can update it in place.
-
-If an older installed copy was signed by a different/unknown key, migration requires **one uninstall/reinstall**: uninstall the old copy, install the canonical persistent-key APK, and then retain that signing lineage forever. Do not migrate users onto a temporary/debug signer merely to make one installation succeed.
+Canonical releases must keep application ID `com.tahlor.smsforwarder`, use the same persistent signing certificate, and increase `versionCode`. Release builds fail if the persistent signer is not configured. GitHub Actions debug APKs are build evidence, not the canonical update artifact unless deliberately signed with the same persistent key.
 
 ## Privacy / security
 
-- Uses only `RECEIVE_SMS` and `SEND_SMS` runtime permissions.
-- Does **not** request `READ_SMS` or Internet access.
-- Does not scan SMS history.
-- Does not store message bodies or verification codes.
-- Backs up only user-configured phone profiles, not transient relay/session state.
-- Prefixes full relayed OTP messages with `[SMS Forwarder]` and ignores already-prefixed messages to prevent forwarding loops.
+- `RECEIVE_SMS` + `SEND_SMS` only.
+- No `READ_SMS`.
+- No Internet permission.
+- No SMS-history scan.
+- No message bodies or verification codes persisted.
+- Full forwarded OTP messages use `[SMS Forwarder]` and already-prefixed messages are ignored to prevent forwarding loops.
 
 ## Build
 
 Requires Java 17-compatible Android build tooling and Android SDK 35.
 
-For normal CI/debug validation:
-
 ```bash
 gradle testDebugUnitTest assembleDebug
 ```
 
-For a canonical publishable build on Archimedes, configure the persistent signer and run:
+Canonical Archimedes release builds use the persistent signer and:
 
 ```bash
 gradle testDebugUnitTest assembleRelease
 ```
 
-The publishable release APK is under `app/build/outputs/apk/release/`. Verify its package, version, SHA-256, permissions, and signing certificate fingerprint before publishing it.
-
-GitHub Actions builds every push to `master` and uploads a debug APK as test/build evidence. It is not the canonical update artifact unless explicitly configured with the same persistent signer.
+Version: **0.1.5 / versionCode 6**.

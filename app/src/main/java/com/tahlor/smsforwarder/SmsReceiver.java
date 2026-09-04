@@ -34,6 +34,12 @@ public final class SmsReceiver extends BroadcastReceiver {
         }
 
         List<PhoneProfile> profiles = ForwardingPreferences.profiles(context);
+        if (profiles.isEmpty()) {
+            ForwardingPreferences.setStatus(context,
+                    "Received SMS, but no downstream phone is registered yet.");
+            return;
+        }
+
         for (Map.Entry<String, StringBuilder> entry : bodiesBySender.entrySet()) {
             String sender = entry.getKey();
             String body = entry.getValue().toString();
@@ -41,10 +47,11 @@ public final class SmsReceiver extends BroadcastReceiver {
 
             if (handleShortCodeRelay(context, profiles, sender, body)) continue;
             if (!hasSendPermission(context)) {
-                ForwardingPreferences.setStatus(context, "Cannot forward: SEND_SMS permission is not granted.");
+                ForwardingPreferences.setStatus(context, "Received SMS but cannot forward: SEND_SMS is missing.");
                 continue;
             }
 
+            boolean forwardedAnywhere = false;
             for (PhoneProfile profile : profiles) {
                 if (!profile.forwardEnabled) continue;
                 if (!MessageFilter.shouldForward(body, profile.codeOnly)) continue;
@@ -58,13 +65,16 @@ public final class SmsReceiver extends BroadcastReceiver {
                     if (profile.codeCopyFollowup && extractedCode != null) {
                         smsManager.sendTextMessage(profile.number, null, extractedCode, null, null);
                     }
-                    ForwardingPreferences.setStatus(context,
-                            "Forwarded a matching SMS to configured phone profile(s).");
+                    forwardedAnywhere = true;
                 } catch (SecurityException e) {
-                    ForwardingPreferences.setStatus(context, "Android denied SMS send permission.");
+                    ForwardingPreferences.setStatus(context, "Android denied SMS forwarding permission.");
                 } catch (RuntimeException e) {
                     ForwardingPreferences.setStatus(context, "Forwarding failed for " + profile.number + ".");
                 }
+            }
+            if (forwardedAnywhere) {
+                ForwardingPreferences.setStatus(context,
+                        "Forwarded the incoming SMS to matching registered phone(s).");
             }
         }
     }
@@ -72,22 +82,39 @@ public final class SmsReceiver extends BroadcastReceiver {
     private static boolean handleShortCodeRelay(Context context, List<PhoneProfile> profiles,
                                                 String sender, String body) {
         long now = System.currentTimeMillis();
+        ShortCodeRelay.Command command = ShortCodeRelay.parseCommand(body);
 
-        for (PhoneProfile profile : profiles) {
-            if (!profile.relayEnabled || !ShortCodeRelay.sameAddress(sender, profile.number)) continue;
-            ShortCodeRelay.Command command = ShortCodeRelay.parseCommand(body);
-            if (command == null) return false;
-            if (!hasSendPermission(context)) {
-                ForwardingPreferences.setStatus(context, "Cannot relay shortcode command: SEND_SMS permission is missing.");
+        if (command != null) {
+            PhoneProfile controller = ShortCodeRelay.findRegisteredProfile(profiles, sender);
+            String displayCode = ShortCodeRelay.formatShortCode(command.shortCode);
+            if (controller == null) {
+                ForwardingPreferences.setStatus(context,
+                        "Ignored shortcode command from an unregistered phone.");
                 return true;
             }
-            String displayCode = ShortCodeRelay.formatShortCode(command.shortCode);
+            if (!controller.relayEnabled) {
+                ForwardingPreferences.setStatus(context,
+                        "Ignored shortcode command: shortcode control is disabled for "
+                                + controller.number + ".");
+                return true;
+            }
+            if (!hasSendPermission(context)) {
+                ForwardingPreferences.setStatus(context,
+                        "Received shortcode command, but SEND_SMS permission is missing.");
+                return true;
+            }
+
             try {
-                ForwardingPreferences.startShortCodeRelay(context, profile.number, command.shortCode, now);
+                ForwardingPreferences.setStatus(context,
+                        "Received shortcode command from " + controller.number
+                                + "; sending to " + displayCode + ".");
+                ForwardingPreferences.startShortCodeRelay(
+                        context, controller.number, command.shortCode, now);
                 if (!command.payload.isEmpty()) {
                     sendMessage(SmsManager.getDefault(), command.shortCode, command.payload);
                     ForwardingPreferences.setStatus(context,
-                            "Sent to shortcode " + displayCode + "; forwarding replies for 5 minutes.");
+                            "Queued SMS to shortcode " + displayCode
+                                    + "; forwarding replies for 5 minutes.");
                 } else {
                     ForwardingPreferences.setStatus(context,
                             "Opened a 5-minute reply window for shortcode " + displayCode + ".");
@@ -95,7 +122,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             } catch (SecurityException e) {
                 ForwardingPreferences.setStatus(context, "Android denied the shortcode SMS send.");
             } catch (RuntimeException e) {
-                ForwardingPreferences.setStatus(context, "Shortcode send failed; carrier/device may not allow it.");
+                ForwardingPreferences.setStatus(context,
+                        "Shortcode send failed; carrier/device may not allow " + displayCode + ".");
             }
             return true;
         }
@@ -106,7 +134,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             String activeShortCode = ForwardingPreferences.activeShortCode(context, profile.number, now);
             if (activeShortCode.isEmpty() || !ShortCodeRelay.senderIsShortCode(sender, activeShortCode)) continue;
             if (!hasSendPermission(context)) {
-                ForwardingPreferences.setStatus(context, "Cannot relay shortcode reply: SEND_SMS permission is missing.");
+                ForwardingPreferences.setStatus(context,
+                        "Received shortcode reply, but SEND_SMS permission is missing.");
                 return true;
             }
             try {
@@ -120,7 +149,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
         }
         if (relayed) {
-            ForwardingPreferences.setStatus(context, "Relayed shortcode reply to active controller profile(s).");
+            ForwardingPreferences.setStatus(context,
+                    "Relayed shortcode reply to active registered controller(s).");
         }
         return relayed;
     }
