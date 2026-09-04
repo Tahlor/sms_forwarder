@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 final class ShortCodeRelay {
     static final long WINDOW_MS = 5L * 60L * 1000L;
     private static final Pattern COMMAND = Pattern.compile(
-            "^\\s*\\[([0-9]{6})\\]\\s*(.*?)\\s*$",
+            "^\\s*\\[([0-9]{3}-?[0-9]{3})\\]\\s*(.*?)\\s*$",
             Pattern.DOTALL);
 
     private ShortCodeRelay() {}
@@ -15,7 +15,19 @@ final class ShortCodeRelay {
         if (body == null) return null;
         Matcher matcher = COMMAND.matcher(body);
         if (!matcher.matches()) return null;
-        return new Command(matcher.group(1), matcher.group(2).trim());
+        return new Command(digitsOnly(matcher.group(1)), matcher.group(2).trim());
+    }
+
+    static String formatShortCode(String shortCode) {
+        String digits = digitsOnly(shortCode);
+        if (digits.length() == 6) return digits.substring(0, 3) + "-" + digits.substring(3);
+        return shortCode == null ? "" : shortCode;
+    }
+
+    static String formatSenderForDisplay(String sender) {
+        String digits = digitsOnly(sender);
+        if (digits.length() == 6) return formatShortCode(digits);
+        return sender == null ? "" : sender;
     }
 
     static boolean sameAddress(String first, String second) {
