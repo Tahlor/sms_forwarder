@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 final class ShortCodeRelay {
     static final long WINDOW_MS = 5L * 60L * 1000L;
     private static final Pattern COMMAND = Pattern.compile(
-            "^\\s*\\[([0-9]{3}-?[0-9]{3})\\]\\s*(.*?)\\s*$",
+            "^\\s*\\[([+]?[-() 0-9.]{3,24})\\]\\s*(.*?)\\s*$",
             Pattern.DOTALL);
 
     private ShortCodeRelay() {}
@@ -16,7 +16,12 @@ final class ShortCodeRelay {
         if (body == null) return null;
         Matcher matcher = COMMAND.matcher(body);
         if (!matcher.matches()) return null;
-        return new Command(digitsOnly(matcher.group(1)), matcher.group(2).trim());
+        String destination = digitsOnly(matcher.group(1));
+        if (destination.length() < 3 || destination.length() > 15) return null;
+        if (matcher.group(1).trim().startsWith("+") && !destination.startsWith("1") && destination.length() == 10) {
+            // Keep raw digits rather than guessing a country code.
+        }
+        return new Command(destination, matcher.group(2).trim());
     }
 
     static PhoneProfile findRegisteredProfile(List<PhoneProfile> profiles, String sender) {
@@ -27,15 +32,24 @@ final class ShortCodeRelay {
         return null;
     }
 
-    static String formatShortCode(String shortCode) {
-        String digits = digitsOnly(shortCode);
+    static boolean isShortCode(String value) {
+        String digits = digitsOnly(value);
+        return digits.length() >= 3 && digits.length() <= 6;
+    }
+
+    static String formatDestination(String destination) {
+        String digits = digitsOnly(destination);
         if (digits.length() == 6) return digits.substring(0, 3) + "-" + digits.substring(3);
-        return shortCode == null ? "" : shortCode;
+        return destination == null ? "" : destination;
+    }
+
+    static String formatShortCode(String shortCode) {
+        return formatDestination(shortCode);
     }
 
     static String formatSenderForDisplay(String sender) {
         String digits = digitsOnly(sender);
-        if (digits.length() == 6) return formatShortCode(digits);
+        if (digits.length() == 6) return formatDestination(digits);
         return sender == null ? "" : sender;
     }
 
@@ -51,10 +65,12 @@ final class ShortCodeRelay {
         return false;
     }
 
+    static boolean senderMatchesDestination(String sender, String destination) {
+        return sameAddress(sender, destination);
+    }
+
     static boolean senderIsShortCode(String sender, String shortCode) {
-        return shortCode != null
-                && shortCode.matches("[0-9]{6}")
-                && digitsOnly(sender).equals(shortCode);
+        return isShortCode(shortCode) && digitsOnly(sender).equals(digitsOnly(shortCode));
     }
 
     private static String digitsOnly(String value) {
@@ -63,11 +79,11 @@ final class ShortCodeRelay {
     }
 
     static final class Command {
-        final String shortCode;
+        final String destination;
         final String payload;
 
-        Command(String shortCode, String payload) {
-            this.shortCode = shortCode;
+        Command(String destination, String payload) {
+            this.destination = destination;
             this.payload = payload;
         }
     }
