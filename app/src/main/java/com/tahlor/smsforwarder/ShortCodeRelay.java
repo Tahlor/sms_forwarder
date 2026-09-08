@@ -16,11 +16,8 @@ final class ShortCodeRelay {
         if (body == null) return null;
         Matcher matcher = COMMAND.matcher(body);
         if (!matcher.matches()) return null;
-        String destination = digitsOnly(matcher.group(1));
-        if (destination.length() < 3 || destination.length() > 15) return null;
-        if (matcher.group(1).trim().startsWith("+") && !destination.startsWith("1") && destination.length() == 10) {
-            // Keep raw digits rather than guessing a country code.
-        }
+        String destination = normalizeDestination(matcher.group(1));
+        if (destination.isEmpty()) return null;
         return new Command(destination, matcher.group(2).trim());
     }
 
@@ -32,8 +29,17 @@ final class ShortCodeRelay {
         return null;
     }
 
-    static boolean isShortCode(String value) {
+    static String normalizeDestination(String value) {
         String digits = digitsOnly(value);
+        return digits.length() >= 3 && digits.length() <= 15 ? digits : "";
+    }
+
+    static boolean isRoutableDestination(String value) {
+        return !normalizeDestination(value).isEmpty();
+    }
+
+    static boolean isShortCode(String value) {
+        String digits = normalizeDestination(value);
         return digits.length() >= 3 && digits.length() <= 6;
     }
 
