@@ -12,11 +12,13 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -28,23 +30,44 @@ public final class MainActivity extends Activity {
     private static final String LATEST_APK_URL =
             "https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk";
 
+    private static final String[] INCOMING_MODE_LABELS = {
+            "All messages",
+            "Secure codes only",
+            "Selected senders only",
+            "Nothing"
+    };
+    private static final String[] OUTGOING_MODE_LABELS = {
+            "Any number",
+            "Short codes only",
+            "Selected numbers only",
+            "Nothing"
+    };
+
     private EditText numberInput;
-    private CheckBox forwardEnabledCheck;
-    private CheckBox codeOnlyCheck;
+    private Spinner incomingModeSpinner;
+    private Spinner outgoingModeSpinner;
+    private EditText incomingAllowInput;
+    private EditText incomingBlockInput;
+    private EditText outgoingAllowInput;
+    private EditText outgoingBlockInput;
     private CheckBox codeCopyFollowupCheck;
-    private CheckBox relayEnabledCheck;
+    private LinearLayout incomingRulesContainer;
+    private LinearLayout outgoingRulesContainer;
+    private Button incomingRulesButton;
+    private Button outgoingRulesButton;
     private LinearLayout profilesContainer;
     private TextView permissionStatus;
     private TextView permissionHelp;
     private TextView forwardingStatus;
     private Button authorizeButton;
+    private String editingOriginalNumber = "";
     private boolean returningFromAppSettings;
     private boolean requestedPermissionsThisLaunch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTitle("SMS Code Forwarder");
+        setTitle("SMS Forwarder");
         View content = buildContent();
         setContentView(content);
         resetProfileEditor();
@@ -69,31 +92,18 @@ public final class MainActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, pad, pad, pad);
 
-        TextView title = new TextView(this);
-        title.setText("SMS Code Forwarder");
-        title.setTextSize(24);
+        TextView title = heading("SMS Forwarder", 27);
         content.addView(title);
 
-        TextView description = new TextView(this);
-        description.setText("Register each phone number once, then choose what that phone should receive or control.");
-        description.setTextSize(16);
-        description.setPadding(0, dp(10), 0, dp(12));
+        TextView description = body("Forward texts between this phone and one or more downstream phones.");
+        description.setPadding(0, dp(6), 0, dp(16));
         content.addView(description);
 
-        Button help = new Button(this);
-        help.setText("Examples & help");
-        help.setOnClickListener(v -> startActivity(new Intent(this, HelpActivity.class)));
-        content.addView(help, fullWidth());
-
-        TextView permissionHeading = heading("1. Authorize SMS access");
-        permissionHeading.setPadding(0, dp(18), 0, dp(4));
-        content.addView(permissionHeading);
-
-        permissionStatus = new TextView(this);
+        permissionStatus = heading("Checking SMS access…", 17);
         content.addView(permissionStatus);
 
-        permissionHelp = new TextView(this);
-        permissionHelp.setPadding(0, dp(6), 0, dp(6));
+        permissionHelp = body("");
+        permissionHelp.setPadding(0, dp(4), 0, dp(8));
         content.addView(permissionHelp);
 
         authorizeButton = new Button(this);
@@ -101,86 +111,111 @@ public final class MainActivity extends Activity {
         authorizeButton.setOnClickListener(v -> requestSmsPermissions(true));
         content.addView(authorizeButton, fullWidth());
 
-        TextView profilesHeading = heading("2. Registered phones");
-        profilesHeading.setPadding(0, dp(18), 0, dp(6));
+        TextView profilesHeading = heading("Downstream phones", 20);
+        profilesHeading.setPadding(0, dp(22), 0, dp(8));
         content.addView(profilesHeading);
 
         profilesContainer = new LinearLayout(this);
         profilesContainer.setOrientation(LinearLayout.VERTICAL);
         content.addView(profilesContainer, fullWidth());
 
-        TextView editorHeading = heading("Add or edit a phone");
-        editorHeading.setPadding(0, dp(16), 0, dp(4));
+        TextView editorHeading = heading("Forwarding setup", 20);
+        editorHeading.setPadding(0, dp(20), 0, dp(8));
         content.addView(editorHeading);
 
+        addLabel(content, "Downstream phone");
         numberInput = new EditText(this);
-        numberInput.setHint("Phone number, e.g. +18015551234");
+        numberInput.setHint("+1 801 555 1234");
         numberInput.setInputType(InputType.TYPE_CLASS_PHONE);
         content.addView(numberInput, fullWidth());
 
-        TextView behaviorLabel = new TextView(this);
-        behaviorLabel.setText("What should this phone do?");
-        behaviorLabel.setPadding(0, dp(8), 0, 0);
-        content.addView(behaviorLabel);
+        TextView incomingHeading = heading("Incoming messages → downstream", 18);
+        incomingHeading.setPadding(0, dp(20), 0, dp(6));
+        content.addView(incomingHeading);
 
-        forwardEnabledCheck = new CheckBox(this);
-        forwardEnabledCheck.setText("Receive forwarded SMS");
-        content.addView(forwardEnabledCheck);
-
-        codeOnlyCheck = new CheckBox(this);
-        codeOnlyCheck.setText("Only forward messages containing a 6+ digit code");
-        content.addView(codeOnlyCheck);
+        addLabel(content, "Forward");
+        incomingModeSpinner = makeSpinner(INCOMING_MODE_LABELS);
+        content.addView(incomingModeSpinner, fullWidth());
 
         codeCopyFollowupCheck = new CheckBox(this);
-        codeCopyFollowupCheck.setText("Also send the extracted code alone for easy copying");
+        codeCopyFollowupCheck.setText("Send detected security code as a second, copyable text");
+        codeCopyFollowupCheck.setPadding(0, dp(6), 0, 0);
         content.addView(codeCopyFollowupCheck);
 
-        relayEnabledCheck = new CheckBox(this);
-        relayEnabledCheck.setText("Allow this phone to control [711-711] shortcodes");
-        content.addView(relayEnabledCheck);
+        incomingRulesButton = new Button(this);
+        incomingRulesButton.setText("Sender rules ▸");
+        incomingRulesButton.setOnClickListener(v -> toggleRules(incomingRulesContainer, incomingRulesButton, "Sender rules"));
+        content.addView(incomingRulesButton, fullWidth());
 
-        TextView relayNote = new TextView(this);
-        relayNote.setText("Example: from this registered phone, send [711711] SAVE to the phone running the app. The app sends only SAVE to 711711 and forwards replies back for 5 minutes.");
-        relayNote.setPadding(dp(32), 0, 0, dp(8));
-        content.addView(relayNote);
+        incomingRulesContainer = buildRulesContainer(
+                "The allow list is used by “Selected senders only.” The block list is always enforced and wins over the allow list.",
+                true);
+        content.addView(incomingRulesContainer, fullWidth());
+
+        TextView outgoingHeading = heading("Downstream → outgoing SMS", 18);
+        outgoingHeading.setPadding(0, dp(20), 0, dp(6));
+        content.addView(outgoingHeading);
+
+        addLabel(content, "Can send to");
+        outgoingModeSpinner = makeSpinner(OUTGOING_MODE_LABELS);
+        content.addView(outgoingModeSpinner, fullWidth());
+
+        TextView replyHelp = body("From the downstream phone, send [711711] SAVE or [8015551234] your message to this phone. Replies from that destination return to the downstream phone for 5 minutes.");
+        replyHelp.setPadding(0, dp(8), 0, dp(4));
+        content.addView(replyHelp);
+
+        outgoingRulesButton = new Button(this);
+        outgoingRulesButton.setText("Destination rules ▸");
+        outgoingRulesButton.setOnClickListener(v -> toggleRules(outgoingRulesContainer, outgoingRulesButton, "Destination rules"));
+        content.addView(outgoingRulesButton, fullWidth());
+
+        outgoingRulesContainer = buildRulesContainer(
+                "The allow list is used by “Selected numbers only.” The block list is always enforced and wins over the allow list.",
+                false);
+        content.addView(outgoingRulesContainer, fullWidth());
 
         Button saveProfile = new Button(this);
-        saveProfile.setText("Save phone");
+        saveProfile.setText("Save forwarding setup");
         saveProfile.setOnClickListener(v -> saveProfile());
-        content.addView(saveProfile, fullWidth());
+        LinearLayout.LayoutParams saveParams = fullWidth();
+        saveParams.topMargin = dp(18);
+        content.addView(saveProfile, saveParams);
 
         Button clearEditor = new Button(this);
-        clearEditor.setText("Add another phone");
+        clearEditor.setText("Clear / add another phone");
         clearEditor.setOnClickListener(v -> resetProfileEditor());
         content.addView(clearEditor, fullWidth());
 
-        TextView maintenanceHeading = heading("Maintenance");
-        maintenanceHeading.setPadding(0, dp(18), 0, dp(6));
-        content.addView(maintenanceHeading);
+        TextView toolsHeading = heading("Help & maintenance", 18);
+        toolsHeading.setPadding(0, dp(22), 0, dp(6));
+        content.addView(toolsHeading);
+
+        LinearLayout tools = new LinearLayout(this);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button help = new Button(this);
+        help.setText("Examples & help");
+        help.setOnClickListener(v -> startActivity(new Intent(this, HelpActivity.class)));
+        tools.addView(help, weighted());
 
         Button update = new Button(this);
         update.setText("Update app");
         update.setOnClickListener(v -> openLatestApk());
-        content.addView(update, fullWidth());
-
-        TextView backupNote = new TextView(this);
-        backupNote.setText("Registered-phone settings participate in Android backup/restore. Temporary 5-minute relay sessions are never backed up. SMS authorization must be granted again after uninstall.");
-        backupNote.setPadding(0, dp(4), 0, dp(8));
-        content.addView(backupNote);
+        tools.addView(update, weighted());
+        content.addView(tools, fullWidth());
 
         Button deleteSetup = new Button(this);
         deleteSetup.setText("Delete saved setup");
         deleteSetup.setOnClickListener(v -> confirmDeleteSavedSetup());
         content.addView(deleteSetup, fullWidth());
 
-        forwardingStatus = new TextView(this);
+        forwardingStatus = body("");
         forwardingStatus.setPadding(0, dp(14), 0, 0);
         forwardingStatus.setTextIsSelectable(true);
         content.addView(forwardingStatus);
 
-        TextView warning = new TextView(this);
-        warning.setText("No Internet permission. No SMS history access. Android 13+ may require the one-time App Info → ⋮ → Allow restricted settings step for this sideloaded APK.");
-        warning.setPadding(0, dp(16), 0, 0);
+        TextView warning = body("No Internet permission and no SMS-history access. Android 13+ may require the one-time App Info → ⋮ → Allow restricted settings step for this sideloaded APK.");
+        warning.setPadding(0, dp(14), 0, 0);
         content.addView(warning);
 
         ScrollView scrollView = new ScrollView(this);
@@ -188,11 +223,78 @@ public final class MainActivity extends Activity {
         return scrollView;
     }
 
-    private TextView heading(String text) {
+    private LinearLayout buildRulesContainer(String note, boolean incoming) {
+        LinearLayout rules = new LinearLayout(this);
+        rules.setOrientation(LinearLayout.VERTICAL);
+        rules.setPadding(dp(12), dp(6), dp(12), dp(10));
+        rules.setVisibility(View.GONE);
+
+        TextView noteView = body(note);
+        noteView.setPadding(0, 0, 0, dp(4));
+        rules.addView(noteView);
+
+        EditText allow = new EditText(this);
+        allow.setHint(incoming ? "Allow list — sender numbers, one per line" : "Allow list — destination numbers, one per line");
+        allow.setMinLines(2);
+        allow.setGravity(android.view.Gravity.TOP);
+        allow.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        rules.addView(allow, fullWidth());
+
+        EditText block = new EditText(this);
+        block.setHint(incoming ? "Block list — sender numbers, one per line" : "Block list — destination numbers, one per line");
+        block.setMinLines(2);
+        block.setGravity(android.view.Gravity.TOP);
+        block.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        rules.addView(block, fullWidth());
+
+        if (incoming) {
+            incomingAllowInput = allow;
+            incomingBlockInput = block;
+        } else {
+            outgoingAllowInput = allow;
+            outgoingBlockInput = block;
+        }
+        return rules;
+    }
+
+    private Spinner makeSpinner(String[] labels) {
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        return spinner;
+    }
+
+    private void toggleRules(LinearLayout container, Button button, String title) {
+        boolean opening = container.getVisibility() != View.VISIBLE;
+        container.setVisibility(opening ? View.VISIBLE : View.GONE);
+        button.setText(title + (opening ? " ▾" : " ▸"));
+    }
+
+    private void setRulesVisible(LinearLayout container, Button button, String title, boolean visible) {
+        container.setVisibility(visible ? View.VISIBLE : View.GONE);
+        button.setText(title + (visible ? " ▾" : " ▸"));
+    }
+
+    private TextView heading(String text, int size) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextSize(19);
+        view.setTextSize(size);
         return view;
+    }
+
+    private TextView body(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(15);
+        return view;
+    }
+
+    private void addLabel(LinearLayout content, String text) {
+        TextView label = body(text);
+        label.setPadding(0, dp(5), 0, dp(2));
+        content.addView(label);
     }
 
     private LinearLayout.LayoutParams fullWidth() {
@@ -200,54 +302,99 @@ public final class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
+    private LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+    }
+
     private void resetProfileEditor() {
         if (numberInput == null) return;
+        editingOriginalNumber = "";
         numberInput.setText("");
-        forwardEnabledCheck.setChecked(true);
-        codeOnlyCheck.setChecked(true);
+        incomingModeSpinner.setSelection(PhoneProfile.IncomingMode.SECURITY_CODES.ordinal());
+        outgoingModeSpinner.setSelection(PhoneProfile.OutgoingMode.SHORT_CODES.ordinal());
         codeCopyFollowupCheck.setChecked(true);
-        relayEnabledCheck.setChecked(true);
+        incomingAllowInput.setText("");
+        incomingBlockInput.setText("");
+        outgoingAllowInput.setText("");
+        outgoingBlockInput.setText("");
+        setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules", false);
+        setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules", false);
     }
 
     private void editProfile(PhoneProfile profile) {
+        editingOriginalNumber = profile.number;
         numberInput.setText(profile.number);
-        forwardEnabledCheck.setChecked(profile.forwardEnabled);
-        codeOnlyCheck.setChecked(profile.codeOnly);
+        incomingModeSpinner.setSelection(profile.incomingMode.ordinal());
+        outgoingModeSpinner.setSelection(profile.outgoingMode.ordinal());
         codeCopyFollowupCheck.setChecked(profile.codeCopyFollowup);
-        relayEnabledCheck.setChecked(profile.relayEnabled);
+        incomingAllowInput.setText(joinList(profile.incomingAllowList));
+        incomingBlockInput.setText(joinList(profile.incomingBlockList));
+        outgoingAllowInput.setText(joinList(profile.outgoingAllowList));
+        outgoingBlockInput.setText(joinList(profile.outgoingBlockList));
+        setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules",
+                !profile.incomingAllowList.isEmpty() || !profile.incomingBlockList.isEmpty());
+        setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules",
+                !profile.outgoingAllowList.isEmpty() || !profile.outgoingBlockList.isEmpty());
         numberInput.requestFocus();
     }
 
     private void saveProfile() {
         String number = numberInput.getText().toString().trim();
         if (number.isEmpty()) {
-            Toast.makeText(this, "Enter a phone number.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Enter the downstream phone number.", Toast.LENGTH_LONG).show();
             return;
         }
-        PhoneProfile profile = new PhoneProfile(number,
-                forwardEnabledCheck.isChecked(),
-                codeOnlyCheck.isChecked(),
-                codeCopyFollowupCheck.isChecked(),
-                relayEnabledCheck.isChecked());
-        if (!profile.hasAnyFeatureEnabled()) {
-            Toast.makeText(this, "Turn on forwarding or shortcode control for this phone.", Toast.LENGTH_LONG).show();
+
+        PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.values()[incomingModeSpinner.getSelectedItemPosition()];
+        PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.values()[outgoingModeSpinner.getSelectedItemPosition()];
+        List<String> incomingAllow = parseAddressList(incomingAllowInput.getText().toString());
+        List<String> incomingBlock = parseAddressList(incomingBlockInput.getText().toString());
+        List<String> outgoingAllow = parseAddressList(outgoingAllowInput.getText().toString());
+        List<String> outgoingBlock = parseAddressList(outgoingBlockInput.getText().toString());
+
+        if (incomingMode == PhoneProfile.IncomingMode.SELECTED && incomingAllow.isEmpty()) {
+            setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules", true);
+            Toast.makeText(this, "Add at least one sender to the incoming allow list.", Toast.LENGTH_LONG).show();
             return;
+        }
+        if (outgoingMode == PhoneProfile.OutgoingMode.SELECTED && outgoingAllow.isEmpty()) {
+            setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules", true);
+            Toast.makeText(this, "Add at least one number to the outgoing allow list.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        PhoneProfile profile = new PhoneProfile(
+                number,
+                incomingMode,
+                incomingAllow,
+                incomingBlock,
+                codeCopyFollowupCheck.isChecked(),
+                outgoingMode,
+                outgoingAllow,
+                outgoingBlock);
+        if (!profile.hasAnyFeatureEnabled()) {
+            Toast.makeText(this, "Choose something to forward or allow in at least one direction.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (!editingOriginalNumber.isEmpty()
+                && !ShortCodeRelay.sameAddress(editingOriginalNumber, number)) {
+            ForwardingPreferences.removeProfile(this, editingOriginalNumber);
         }
         ForwardingPreferences.saveProfile(this, profile);
-        ForwardingPreferences.setStatus(this, "Saved phone profile " + number + ".");
+        ForwardingPreferences.setStatus(this, "Saved forwarding setup for " + number + ".");
         resetProfileEditor();
         refreshProfiles();
         refreshStatus();
         if (!allSmsPermissionsGranted()) requestSmsPermissions(false);
-        Toast.makeText(this, "Phone saved.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Forwarding setup saved.", Toast.LENGTH_SHORT).show();
     }
 
     private void refreshProfiles() {
         profilesContainer.removeAllViews();
         List<PhoneProfile> profiles = ForwardingPreferences.profiles(this);
         if (profiles.isEmpty()) {
-            TextView empty = new TextView(this);
-            empty.setText("No phones registered yet. Add the downstream phone below.");
+            TextView empty = body("No downstream phone configured yet.");
             profilesContainer.addView(empty);
             return;
         }
@@ -255,10 +402,9 @@ public final class MainActivity extends Activity {
         for (PhoneProfile profile : profiles) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(0, dp(6), 0, dp(10));
+            card.setPadding(0, dp(5), 0, dp(10));
 
-            TextView summary = new TextView(this);
-            summary.setText(profile.summary());
+            TextView summary = body(profile.summary());
             summary.setTextIsSelectable(true);
             card.addView(summary);
 
@@ -268,14 +414,12 @@ public final class MainActivity extends Activity {
             Button edit = new Button(this);
             edit.setText("Edit");
             edit.setOnClickListener(v -> editProfile(profile));
-            actions.addView(edit, new LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            actions.addView(edit, weighted());
 
             Button remove = new Button(this);
             remove.setText("Remove");
             remove.setOnClickListener(v -> confirmRemoveProfile(profile));
-            actions.addView(remove, new LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            actions.addView(remove, weighted());
 
             card.addView(actions, fullWidth());
             profilesContainer.addView(card, fullWidth());
@@ -284,11 +428,12 @@ public final class MainActivity extends Activity {
 
     private void confirmRemoveProfile(PhoneProfile profile) {
         new AlertDialog.Builder(this)
-                .setTitle("Remove phone?")
-                .setMessage("Remove " + profile.number + " and its forwarding/relay settings?")
+                .setTitle("Remove downstream phone?")
+                .setMessage("Remove " + profile.number + " and all of its forwarding rules?")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Remove", (dialog, which) -> {
                     ForwardingPreferences.removeProfile(this, profile.number);
+                    if (ShortCodeRelay.sameAddress(editingOriginalNumber, profile.number)) resetProfileEditor();
                     refreshProfiles();
                     refreshStatus();
                 })
@@ -298,7 +443,7 @@ public final class MainActivity extends Activity {
     private void confirmDeleteSavedSetup() {
         new AlertDialog.Builder(this)
                 .setTitle("Delete saved setup?")
-                .setMessage("This removes every registered phone. It does not revoke Android SMS permissions.")
+                .setMessage("This removes every downstream phone and its forwarding rules. It does not revoke Android SMS permissions.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Delete", (dialog, which) -> {
                     ForwardingPreferences.deleteSavedSetup(this);
@@ -308,6 +453,25 @@ public final class MainActivity extends Activity {
                     Toast.makeText(this, "Saved setup deleted.", Toast.LENGTH_SHORT).show();
                 })
                 .show();
+    }
+
+    private List<String> parseAddressList(String raw) {
+        ArrayList<String> result = new ArrayList<>();
+        if (raw == null || raw.trim().isEmpty()) return result;
+        for (String part : raw.split("[\\n,;]+")) {
+            String value = part.trim();
+            if (!value.isEmpty()) result.add(value);
+        }
+        return result;
+    }
+
+    private String joinList(List<String> values) {
+        StringBuilder result = new StringBuilder();
+        for (String value : values) {
+            if (result.length() > 0) result.append('\n');
+            result.append(value);
+        }
+        return result.toString();
     }
 
     private void requestMissingPermissionsOnLaunch() {
@@ -393,14 +557,14 @@ public final class MainActivity extends Activity {
     private void refreshStatus() {
         boolean receive = checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
         boolean send = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
-        permissionStatus.setText("Receive SMS: " + (receive ? "granted" : "missing")
-                + "   •   Send SMS: " + (send ? "granted" : "missing"));
         if (receive && send) {
-            permissionHelp.setText("Ready. Incoming SMS can be received and forwarded.");
-            if (authorizeButton != null) authorizeButton.setText("SMS access authorized ✓");
+            permissionStatus.setText("✓ SMS access ready");
+            permissionHelp.setText("Incoming messages can be filtered, forwarded, and replied to using the rules below.");
+            authorizeButton.setText("SMS access authorized ✓");
         } else {
-            permissionHelp.setText("Tap Authorize SMS access. If Android blocks the prompt, the app will walk you through App Info → ⋮ → Allow restricted settings and retry automatically.");
-            if (authorizeButton != null) authorizeButton.setText("Authorize SMS access");
+            permissionStatus.setText("SMS access needs attention");
+            permissionHelp.setText("Authorize Receive SMS and Send SMS. If Android blocks the prompt, the app will guide the one-time restricted-settings step.");
+            authorizeButton.setText("Authorize SMS access");
         }
         forwardingStatus.setText("Last status: " + ForwardingPreferences.status(this));
     }
