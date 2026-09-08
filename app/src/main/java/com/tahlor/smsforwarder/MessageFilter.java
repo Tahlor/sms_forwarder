@@ -8,17 +8,17 @@ final class MessageFilter {
 
     private MessageFilter() {}
 
+    static boolean containsSecurityCode(String body) {
+        return body != null && !body.isEmpty() && SIX_PLUS_DIGITS.matcher(body).find();
+    }
+
     static boolean shouldForward(String body, boolean codeOnly) {
-        if (body == null || body.isEmpty()) {
-            return false;
-        }
-        return !codeOnly || SIX_PLUS_DIGITS.matcher(body).find();
+        if (body == null || body.isEmpty()) return false;
+        return !codeOnly || containsSecurityCode(body);
     }
 
     static String extractCode(String body) {
-        if (body == null || body.isEmpty()) {
-            return null;
-        }
+        if (body == null || body.isEmpty()) return null;
         Matcher matcher = SIX_PLUS_DIGITS.matcher(body);
         return matcher.find() ? matcher.group() : null;
     }
