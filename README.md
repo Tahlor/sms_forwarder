@@ -1,72 +1,111 @@
-# SMS Code Forwarder
+# SMS Forwarder
 
-A tiny sideload-only Android app for forwarding newly received SMS messages to registered downstream phones and relaying shortcode conversations.
+A small sideload-only Android app that forwards newly received SMS messages to one or more downstream phones and can optionally send bracket-addressed replies back through the forwarding phone.
 
 ## Setup model
 
-A phone number is registered once. Each registered phone independently controls:
+Each downstream phone is configured once with two independent policies.
 
-- whether it receives forwarded SMS;
-- whether forwarding is limited to messages containing 6+ consecutive digits (`[0-9]{6,}`);
-- whether it also gets a second SMS containing only the extracted code;
-- whether it can control six-digit SMS shortcodes.
+### Incoming messages → downstream
 
-There are no separate destination/controller number fields. Multiple downstream phones are supported by adding another registered phone.
+Choose one mode:
 
-## Sideload authorization
+- **All messages**
+- **Secure codes only** — messages containing 6+ consecutive digits (`[0-9]{6,}`)
+- **Selected senders only** — only senders on the incoming allow list
+- **Nothing**
 
-The app requests only `RECEIVE_SMS` and `SEND_SMS`. On Android 13+, sideloaded apps can have sensitive permissions blocked by Restricted Settings. The app uses one guided **Authorize SMS access** flow:
+Incoming **Sender rules** provide both an allow list and a block list. The allow list is used by Selected senders only. The block list is enforced in every enabled mode and always wins.
 
-1. it requests the two SMS permissions;
-2. if Android blocks them, it explains the one-time App Info → top-right `⋮` → **Allow restricted settings** step;
-3. when the user returns from App Info, the app automatically retries the SMS permission request.
+A profile can also send a second SMS containing only the first detected security code for easier copying.
 
-Android does not expose a public API that lets an app silently toggle **Allow restricted settings** itself. Successful `RECEIVE_SMS` + `SEND_SMS` grants are the app's readiness check. Google documents the restricted-settings flow for sideloaded apps at Android Help.
+### Downstream → outgoing SMS
 
-## OTP forwarding
+Choose one mode:
 
-A forwarding-enabled phone profile normally forwards only messages containing 6+ consecutive digits. If code-copy is enabled, the app sends the full forwarded message and then a second SMS containing only the first qualifying digit sequence.
+- **Any number**
+- **Short codes only**
+- **Selected numbers only** — only destinations on the outgoing allow list
+- **Nothing**
 
-Six-digit sender/shortcode labels are displayed with a dash so they do not look like a second OTP. Sender `711711`, for example, is displayed as `711-711`; the raw SMS address is unchanged internally.
+Outgoing **Destination rules** likewise provide an allow list and a block list. The block list is always enforced and always wins.
 
-## Shortcode relay
-
-A registered phone with shortcode control enabled can send this to the phone running the app:
+To send through the forwarding phone, the downstream phone sends a bracket-addressed SMS to the forwarding phone:
 
 ```text
 [711711] SAVE
 ```
 
-or:
+or, when normal numbers are allowed:
 
 ```text
-[711-711] SAVE
+[8015551234] Sounds good, see you at 7
 ```
 
-The app matches the inbound sender to the registered phone, sends only `SAVE` to raw shortcode `711711`, and opens a 5-minute reply window for that controller. Replies from the shortcode are returned as:
+The forwarding phone strips the bracketed destination and sends the payload to that destination.
+
+Phone-number rules normalize common formatting differences such as `+1`, spaces, parentheses, and dashes. Incoming alphanumeric sender IDs can also be matched exactly, case-insensitively.
+
+## Reply window
+
+After an allowed bracket-addressed outgoing command, the app keeps a 5-minute return route for that downstream phone. A reply from the destination is sent back to the same downstream phone as:
 
 ```text
 [711-711] <reply text>
 ```
 
-`[711711]` with no payload only opens the reply window. Each registered controller has its own temporary session.
+or the equivalent bracketed normal phone number.
 
-Bracketed shortcode commands are now handled explicitly rather than silently falling through to ordinary forwarding. Runtime status reports whether the command came from an unregistered phone, shortcode control was disabled, `SEND_SMS` was missing, the send was queued, or Android/carrier rejected it synchronously.
+Sending another command refreshes the 5-minute window. A bracketed destination with no payload opens the return window without sending an SMS.
 
-## In-app examples / diagnostics
+## Multiple downstream phones
 
-The **Examples & help** page shows:
+Multiple downstream phones are supported. Each phone has independent:
 
-- current Receive/Send SMS permission state;
-- every registered phone and its enabled behaviors;
-- the latest runtime status;
-- copyable examples for OTP forwarding, `[711711] SAVE`, reply windows, multiple phone profiles, and restricted-settings troubleshooting.
+- incoming mode;
+- incoming allow/block lists;
+- code-only copy preference;
+- outgoing mode;
+- outgoing allow/block lists;
+- temporary reply window.
 
-## Settings persistence and deletion
+Editing a downstream phone number replaces the original profile rather than accidentally leaving a duplicate behind.
 
-Registered-phone configuration participates in Android backup/restore. Only durable configuration is backed up; transient status and active 5-minute relay sessions are kept separately and excluded. Uninstall clears SMS permissions, so authorization must be granted again.
+## Sideload authorization
 
-**Delete saved setup** clears the registered phones and runtime state and notifies Android Backup Manager of the deletion.
+The app requests only `RECEIVE_SMS` and `SEND_SMS`. On Android 13+, sideloaded apps can have sensitive permissions blocked by Restricted Settings. The app uses one guided **Authorize SMS access** flow:
+
+1. request Receive SMS and Send SMS;
+2. if Android blocks them, explain App Info → top-right `⋮` → **Allow restricted settings**;
+3. automatically retry the SMS permission request when the user returns.
+
+Android does not expose a public API that lets an app silently enable Allow restricted settings itself.
+
+## UI
+
+The main screen is organized around the two directions instead of a grid of feature checkboxes:
+
+- compact SMS authorization status;
+- downstream phone selector/editor;
+- **Incoming messages → downstream** dropdown;
+- collapsible **Sender rules**;
+- **Downstream → outgoing SMS** dropdown;
+- collapsible **Destination rules**;
+- help/update/maintenance actions.
+
+The **Examples & help** page shows the current setup, permission state, runtime status, forwarding examples, reply syntax, filtering behavior, and restricted-settings instructions.
+
+## Settings migration and persistence
+
+Existing profile settings are read compatibly:
+
+- legacy forwarding + code-only booleans map to All messages / Secure codes only / Nothing;
+- legacy shortcode relay maps to Short codes only / Nothing;
+- existing downstream phone numbers and code-copy preferences are retained.
+
+New allow/block lists and directional modes participate in Android backup/restore. Runtime status and active 5-minute reply sessions remain transient and are not backed up.
+
+**Delete saved setup** clears all downstream phones, directional rules, and runtime state. It does not revoke Android SMS permissions.
 
 ## Updating the app
 
@@ -87,7 +126,9 @@ Canonical releases must keep application ID `com.tahlor.smsforwarder`, use the s
 - No Internet permission.
 - No SMS-history scan.
 - No message bodies or verification codes persisted.
-- Full forwarded OTP messages use `[SMS Forwarder]` and already-prefixed messages are ignored to prevent forwarding loops.
+- Full forwarded messages use `[SMS Forwarder]`; already-prefixed messages are ignored to prevent forwarding loops.
+- Outgoing relay requires the sender to match a configured downstream phone and its destination policy.
+- Block lists take precedence over allow lists.
 
 ## Build
 
@@ -97,10 +138,10 @@ Requires Java 17-compatible Android build tooling and Android SDK 35.
 gradle testDebugUnitTest assembleDebug
 ```
 
-Canonical Archimedes release builds use the persistent signer and:
+Canonical release builds use the persistent signer and:
 
 ```bash
 gradle testDebugUnitTest assembleRelease
 ```
 
-Version: **0.1.5 / versionCode 6**.
+Version: **0.1.6 / versionCode 7**.
