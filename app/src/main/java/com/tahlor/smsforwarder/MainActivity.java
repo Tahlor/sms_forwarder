@@ -6,12 +6,17 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -30,9 +35,19 @@ public final class MainActivity extends Activity {
     private static final String LATEST_APK_URL =
             "https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk";
 
+    private static final int COLOR_BG = 0xFFF7F7FA;
+    private static final int COLOR_SURFACE = 0xFFFFFFFF;
+    private static final int COLOR_TEXT = 0xFF17171B;
+    private static final int COLOR_MUTED = 0xFF6D6D76;
+    private static final int COLOR_BORDER = 0xFFE5E5EA;
+    private static final int COLOR_ACCENT = 0xFF315CF5;
+    private static final int COLOR_ACCENT_SOFT = 0xFFEAF0FF;
+    private static final int COLOR_SUCCESS = 0xFF168243;
+    private static final int COLOR_DANGER = 0xFFB3261E;
+
     private static final String[] INCOMING_MODE_LABELS = {
             "All messages",
-            "Secure codes only",
+            "Security codes only",
             "Selected senders only",
             "Nothing"
     };
@@ -42,6 +57,18 @@ public final class MainActivity extends Activity {
             "Selected numbers only",
             "Nothing"
     };
+
+    private ScrollView rootScroll;
+    private LinearLayout profilesContainer;
+    private LinearLayout editorContainer;
+    private LinearLayout moreContainer;
+    private TextView editorTitle;
+    private TextView permissionStatus;
+    private TextView permissionHelp;
+    private TextView forwardingStatus;
+    private TextView advancedRulesLink;
+    private TextView removeEditingLink;
+    private Button authorizeButton;
 
     private EditText numberInput;
     private Spinner incomingModeSpinner;
@@ -53,14 +80,9 @@ public final class MainActivity extends Activity {
     private CheckBox codeCopyFollowupCheck;
     private LinearLayout incomingRulesContainer;
     private LinearLayout outgoingRulesContainer;
-    private Button incomingRulesButton;
-    private Button outgoingRulesButton;
-    private LinearLayout profilesContainer;
-    private TextView permissionStatus;
-    private TextView permissionHelp;
-    private TextView forwardingStatus;
-    private Button authorizeButton;
+
     private String editingOriginalNumber = "";
+    private boolean advancedRulesShown;
     private boolean returningFromAppSettings;
     private boolean requestedPermissionsThisLaunch;
 
@@ -68,6 +90,10 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("SMS Forwarder");
+        getWindow().setStatusBarColor(COLOR_BG);
+        getWindow().setNavigationBarColor(COLOR_BG);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+
         View content = buildContent();
         setContentView(content);
         resetProfileEditor();
@@ -87,163 +113,236 @@ public final class MainActivity extends Activity {
     }
 
     private View buildContent() {
-        int pad = dp(20);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(pad, pad, pad, pad);
+        content.setPadding(dp(20), dp(18), dp(20), dp(28));
+        content.setBackgroundColor(COLOR_BG);
 
-        TextView title = heading("SMS Forwarder", 27);
-        content.addView(title);
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.TOP);
 
-        TextView description = body("Forward texts between this phone and one or more downstream phones.");
-        description.setPadding(0, dp(6), 0, dp(16));
-        content.addView(description);
+        LinearLayout headerText = new LinearLayout(this);
+        headerText.setOrientation(LinearLayout.VERTICAL);
+        TextView title = heading("SMS Forwarder", 28);
+        headerText.addView(title);
+        TextView description = body("Forward messages between this phone and your other phones.");
+        description.setPadding(0, dp(4), 0, 0);
+        headerText.addView(description);
+        header.addView(headerText, weighted());
 
-        permissionStatus = heading("Checking SMS access…", 17);
+        TextView help = link("Help");
+        help.setPadding(dp(14), dp(4), dp(2), dp(10));
+        help.setOnClickListener(v -> startActivity(new Intent(this, HelpActivity.class)));
+        header.addView(help);
+        content.addView(header, fullWidth());
+
+        permissionStatus = body("");
+        permissionStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        permissionStatus.setPadding(0, dp(14), 0, 0);
         content.addView(permissionStatus);
 
         permissionHelp = body("");
         permissionHelp.setPadding(0, dp(4), 0, dp(8));
         content.addView(permissionHelp);
 
-        authorizeButton = new Button(this);
-        authorizeButton.setText("Authorize SMS access");
+        authorizeButton = primaryButton("Authorize SMS access");
         authorizeButton.setOnClickListener(v -> requestSmsPermissions(true));
         content.addView(authorizeButton, fullWidth());
 
-        TextView profilesHeading = heading("Downstream phones", 20);
-        profilesHeading.setPadding(0, dp(22), 0, dp(8));
-        content.addView(profilesHeading);
+        LinearLayout phonesHeader = new LinearLayout(this);
+        phonesHeader.setOrientation(LinearLayout.HORIZONTAL);
+        phonesHeader.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams phonesHeaderParams = fullWidth();
+        phonesHeaderParams.topMargin = dp(22);
+
+        TextView phonesTitle = heading("Your phones", 20);
+        phonesHeader.addView(phonesTitle, weighted());
+        TextView addPhone = link("+ Add phone");
+        addPhone.setPadding(dp(12), dp(8), 0, dp(8));
+        addPhone.setOnClickListener(v -> showNewProfileEditor());
+        phonesHeader.addView(addPhone);
+        content.addView(phonesHeader, phonesHeaderParams);
 
         profilesContainer = new LinearLayout(this);
         profilesContainer.setOrientation(LinearLayout.VERTICAL);
-        content.addView(profilesContainer, fullWidth());
+        LinearLayout.LayoutParams profilesParams = fullWidth();
+        profilesParams.topMargin = dp(8);
+        content.addView(profilesContainer, profilesParams);
 
-        TextView editorHeading = heading("Forwarding setup", 20);
-        editorHeading.setPadding(0, dp(20), 0, dp(8));
-        content.addView(editorHeading);
+        editorContainer = buildEditor();
+        editorContainer.setVisibility(View.GONE);
+        LinearLayout.LayoutParams editorParams = cardParams();
+        editorParams.topMargin = dp(16);
+        content.addView(editorContainer, editorParams);
 
-        addLabel(content, "Downstream phone");
+        forwardingStatus = body("");
+        forwardingStatus.setTextColor(COLOR_DANGER);
+        forwardingStatus.setBackground(roundedBackground(0xFFFFF0EF, 12));
+        forwardingStatus.setPadding(dp(14), dp(11), dp(14), dp(11));
+        forwardingStatus.setTextIsSelectable(true);
+        forwardingStatus.setVisibility(View.GONE);
+        LinearLayout.LayoutParams statusParams = fullWidth();
+        statusParams.topMargin = dp(14);
+        content.addView(forwardingStatus, statusParams);
+
+        TextView moreLink = link("More");
+        moreLink.setPadding(0, dp(20), 0, dp(8));
+        content.addView(moreLink);
+
+        moreContainer = new LinearLayout(this);
+        moreContainer.setOrientation(LinearLayout.VERTICAL);
+        moreContainer.setVisibility(View.GONE);
+
+        Button update = secondaryButton("Update app");
+        update.setOnClickListener(v -> openLatestApk());
+        moreContainer.addView(update, fullWidth());
+
+        TextView deleteSetup = link("Delete all saved setup");
+        deleteSetup.setTextColor(COLOR_DANGER);
+        deleteSetup.setPadding(dp(4), dp(14), dp(4), dp(10));
+        deleteSetup.setOnClickListener(v -> confirmDeleteSavedSetup());
+        moreContainer.addView(deleteSetup);
+
+        TextView privacy = body("No Internet permission. No SMS-history access.");
+        privacy.setTextSize(13);
+        privacy.setPadding(0, dp(4), 0, 0);
+        moreContainer.addView(privacy);
+        content.addView(moreContainer, fullWidth());
+
+        moreLink.setOnClickListener(v -> {
+            boolean show = moreContainer.getVisibility() != View.VISIBLE;
+            moreContainer.setVisibility(show ? View.VISIBLE : View.GONE);
+            moreLink.setText(show ? "Less" : "More");
+        });
+
+        rootScroll = new ScrollView(this);
+        rootScroll.setFillViewport(true);
+        rootScroll.setBackgroundColor(COLOR_BG);
+        rootScroll.addView(content);
+        return rootScroll;
+    }
+
+    private LinearLayout buildEditor() {
+        LinearLayout editor = new LinearLayout(this);
+        editor.setOrientation(LinearLayout.VERTICAL);
+        editor.setPadding(dp(18), dp(16), dp(18), dp(18));
+        editor.setBackground(roundedBackground(COLOR_SURFACE, 18));
+
+        LinearLayout editorHeader = new LinearLayout(this);
+        editorHeader.setOrientation(LinearLayout.HORIZONTAL);
+        editorHeader.setGravity(Gravity.CENTER_VERTICAL);
+        editorTitle = heading("Add phone", 21);
+        editorHeader.addView(editorTitle, weighted());
+        TextView cancel = link("Cancel");
+        cancel.setPadding(dp(12), dp(6), 0, dp(6));
+        cancel.setOnClickListener(v -> hideEditor());
+        editorHeader.addView(cancel);
+        editor.addView(editorHeader, fullWidth());
+
+        addLabel(editor, "Phone number");
         numberInput = new EditText(this);
         numberInput.setHint("+1 801 555 1234");
         numberInput.setInputType(InputType.TYPE_CLASS_PHONE);
-        content.addView(numberInput, fullWidth());
+        editor.addView(numberInput, fullWidth());
 
-        TextView incomingHeading = heading("Incoming messages → downstream", 18);
-        incomingHeading.setPadding(0, dp(20), 0, dp(6));
-        content.addView(incomingHeading);
-
-        addLabel(content, "Forward");
+        TextView incomingHeading = heading("What should this phone receive?", 17);
+        incomingHeading.setPadding(0, dp(18), 0, dp(4));
+        editor.addView(incomingHeading);
         incomingModeSpinner = makeSpinner(INCOMING_MODE_LABELS);
-        content.addView(incomingModeSpinner, fullWidth());
+        editor.addView(incomingModeSpinner, fullWidth());
 
         codeCopyFollowupCheck = new CheckBox(this);
-        codeCopyFollowupCheck.setText("Send detected security code as a second, copyable text");
-        codeCopyFollowupCheck.setPadding(0, dp(6), 0, 0);
-        content.addView(codeCopyFollowupCheck);
+        codeCopyFollowupCheck.setText("Send detected code separately for easy copying");
+        codeCopyFollowupCheck.setTextColor(COLOR_TEXT);
+        codeCopyFollowupCheck.setTextSize(15);
+        codeCopyFollowupCheck.setPadding(0, dp(4), 0, 0);
+        editor.addView(codeCopyFollowupCheck);
 
-        incomingRulesButton = new Button(this);
-        incomingRulesButton.setText("Sender rules ▸");
-        incomingRulesButton.setOnClickListener(v -> toggleRules(incomingRulesContainer, incomingRulesButton, "Sender rules"));
-        content.addView(incomingRulesButton, fullWidth());
-
-        incomingRulesContainer = buildRulesContainer(
-                "The allow list is used by “Selected senders only.” The block list is always enforced and wins over the allow list.",
-                true);
-        content.addView(incomingRulesContainer, fullWidth());
-
-        TextView outgoingHeading = heading("Downstream → outgoing SMS", 18);
-        outgoingHeading.setPadding(0, dp(20), 0, dp(6));
-        content.addView(outgoingHeading);
-
-        addLabel(content, "Can send to");
+        TextView outgoingHeading = heading("What can this phone send through here?", 17);
+        outgoingHeading.setPadding(0, dp(18), 0, dp(4));
+        editor.addView(outgoingHeading);
         outgoingModeSpinner = makeSpinner(OUTGOING_MODE_LABELS);
-        content.addView(outgoingModeSpinner, fullWidth());
+        editor.addView(outgoingModeSpinner, fullWidth());
 
-        TextView replyHelp = body("From the downstream phone, send [711711] SAVE or [8015551234] your message to this phone. Replies from that destination return to the downstream phone for 5 minutes.");
-        replyHelp.setPadding(0, dp(8), 0, dp(4));
-        content.addView(replyHelp);
+        TextView outgoingHint = body("Example: [711711] SAVE sends SAVE to shortcode 711711.");
+        outgoingHint.setTextSize(13);
+        outgoingHint.setPadding(0, dp(6), 0, 0);
+        editor.addView(outgoingHint);
 
-        outgoingRulesButton = new Button(this);
-        outgoingRulesButton.setText("Destination rules ▸");
-        outgoingRulesButton.setOnClickListener(v -> toggleRules(outgoingRulesContainer, outgoingRulesButton, "Destination rules"));
-        content.addView(outgoingRulesButton, fullWidth());
+        advancedRulesLink = link("Advanced rules");
+        advancedRulesLink.setPadding(0, dp(16), 0, dp(8));
+        advancedRulesLink.setOnClickListener(v -> {
+            advancedRulesShown = !advancedRulesShown;
+            updateEditorVisibility();
+        });
+        editor.addView(advancedRulesLink);
 
-        outgoingRulesContainer = buildRulesContainer(
-                "The allow list is used by “Selected numbers only.” The block list is always enforced and wins over the allow list.",
-                false);
-        content.addView(outgoingRulesContainer, fullWidth());
+        incomingRulesContainer = buildRulesContainer(true);
+        editor.addView(incomingRulesContainer, fullWidth());
 
-        Button saveProfile = new Button(this);
-        saveProfile.setText("Save forwarding setup");
-        saveProfile.setOnClickListener(v -> saveProfile());
+        outgoingRulesContainer = buildRulesContainer(false);
+        editor.addView(outgoingRulesContainer, fullWidth());
+
+        Button save = primaryButton("Save phone");
+        save.setOnClickListener(v -> saveProfile());
         LinearLayout.LayoutParams saveParams = fullWidth();
-        saveParams.topMargin = dp(18);
-        content.addView(saveProfile, saveParams);
+        saveParams.topMargin = dp(16);
+        editor.addView(save, saveParams);
 
-        Button clearEditor = new Button(this);
-        clearEditor.setText("Clear / add another phone");
-        clearEditor.setOnClickListener(v -> resetProfileEditor());
-        content.addView(clearEditor, fullWidth());
+        removeEditingLink = link("Remove phone");
+        removeEditingLink.setTextColor(COLOR_DANGER);
+        removeEditingLink.setGravity(Gravity.CENTER);
+        removeEditingLink.setPadding(dp(8), dp(14), dp(8), dp(2));
+        removeEditingLink.setVisibility(View.GONE);
+        removeEditingLink.setOnClickListener(v -> {
+            if (!editingOriginalNumber.isEmpty()) confirmRemoveNumber(editingOriginalNumber);
+        });
+        editor.addView(removeEditingLink, fullWidth());
 
-        TextView toolsHeading = heading("Help & maintenance", 18);
-        toolsHeading.setPadding(0, dp(22), 0, dp(6));
-        content.addView(toolsHeading);
+        AdapterView.OnItemSelectedListener listener = new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                updateEditorVisibility();
+            }
 
-        LinearLayout tools = new LinearLayout(this);
-        tools.setOrientation(LinearLayout.HORIZONTAL);
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        };
+        incomingModeSpinner.setOnItemSelectedListener(listener);
+        outgoingModeSpinner.setOnItemSelectedListener(listener);
 
-        Button help = new Button(this);
-        help.setText("Examples & help");
-        help.setOnClickListener(v -> startActivity(new Intent(this, HelpActivity.class)));
-        tools.addView(help, weighted());
-
-        Button update = new Button(this);
-        update.setText("Update app");
-        update.setOnClickListener(v -> openLatestApk());
-        tools.addView(update, weighted());
-        content.addView(tools, fullWidth());
-
-        Button deleteSetup = new Button(this);
-        deleteSetup.setText("Delete saved setup");
-        deleteSetup.setOnClickListener(v -> confirmDeleteSavedSetup());
-        content.addView(deleteSetup, fullWidth());
-
-        forwardingStatus = body("");
-        forwardingStatus.setPadding(0, dp(14), 0, 0);
-        forwardingStatus.setTextIsSelectable(true);
-        content.addView(forwardingStatus);
-
-        TextView warning = body("No Internet permission and no SMS-history access. Android 13+ may require the one-time App Info → ⋮ → Allow restricted settings step for this sideloaded APK.");
-        warning.setPadding(0, dp(14), 0, 0);
-        content.addView(warning);
-
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.addView(content);
-        return scrollView;
+        return editor;
     }
 
-    private LinearLayout buildRulesContainer(String note, boolean incoming) {
+    private LinearLayout buildRulesContainer(boolean incoming) {
         LinearLayout rules = new LinearLayout(this);
         rules.setOrientation(LinearLayout.VERTICAL);
-        rules.setPadding(dp(12), dp(6), dp(12), dp(10));
+        rules.setPadding(dp(12), dp(8), dp(12), dp(12));
+        rules.setBackground(roundedBackground(COLOR_ACCENT_SOFT, 12));
         rules.setVisibility(View.GONE);
 
-        TextView noteView = body(note);
-        noteView.setPadding(0, 0, 0, dp(4));
-        rules.addView(noteView);
+        TextView title = heading(incoming ? "Incoming filters" : "Outgoing filters", 15);
+        rules.addView(title);
+
+        TextView note = body(incoming
+                ? "Use an allow list for “Selected senders only.” Blocked senders always win."
+                : "Use an allow list for “Selected numbers only.” Blocked destinations always win.");
+        note.setTextSize(13);
+        note.setPadding(0, dp(2), 0, dp(6));
+        rules.addView(note);
 
         EditText allow = new EditText(this);
-        allow.setHint(incoming ? "Allow list — sender numbers, one per line" : "Allow list — destination numbers, one per line");
+        allow.setHint(incoming ? "Allowed senders — one per line" : "Allowed destinations — one per line");
         allow.setMinLines(2);
-        allow.setGravity(android.view.Gravity.TOP);
+        allow.setGravity(Gravity.TOP);
         allow.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         rules.addView(allow, fullWidth());
 
         EditText block = new EditText(this);
-        block.setHint(incoming ? "Block list — sender numbers, one per line" : "Block list — destination numbers, one per line");
+        block.setHint(incoming ? "Blocked senders — one per line" : "Blocked destinations — one per line");
         block.setMinLines(2);
-        block.setGravity(android.view.Gravity.TOP);
+        block.setGravity(Gravity.TOP);
         block.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         rules.addView(block, fullWidth());
 
@@ -263,52 +362,31 @@ public final class MainActivity extends Activity {
                 android.R.layout.simple_spinner_item, labels);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
+        spinner.setPadding(0, dp(3), 0, dp(3));
         return spinner;
     }
 
-    private void toggleRules(LinearLayout container, Button button, String title) {
-        boolean opening = container.getVisibility() != View.VISIBLE;
-        container.setVisibility(opening ? View.VISIBLE : View.GONE);
-        button.setText(title + (opening ? " ▾" : " ▸"));
+    private void showNewProfileEditor() {
+        resetProfileEditor();
+        editorTitle.setText("Add phone");
+        removeEditingLink.setVisibility(View.GONE);
+        showEditor();
     }
 
-    private void setRulesVisible(LinearLayout container, Button button, String title, boolean visible) {
-        container.setVisibility(visible ? View.VISIBLE : View.GONE);
-        button.setText(title + (visible ? " ▾" : " ▸"));
+    private void showEditor() {
+        editorContainer.setVisibility(View.VISIBLE);
+        editorContainer.post(() -> rootScroll.smoothScrollTo(0, editorContainer.getTop() - dp(12)));
     }
 
-    private TextView heading(String text, int size) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(size);
-        return view;
-    }
-
-    private TextView body(String text) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(15);
-        return view;
-    }
-
-    private void addLabel(LinearLayout content, String text) {
-        TextView label = body(text);
-        label.setPadding(0, dp(5), 0, dp(2));
-        content.addView(label);
-    }
-
-    private LinearLayout.LayoutParams fullWidth() {
-        return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-    }
-
-    private LinearLayout.LayoutParams weighted() {
-        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+    private void hideEditor() {
+        editorContainer.setVisibility(View.GONE);
+        editingOriginalNumber = "";
     }
 
     private void resetProfileEditor() {
         if (numberInput == null) return;
         editingOriginalNumber = "";
+        advancedRulesShown = false;
         numberInput.setText("");
         incomingModeSpinner.setSelection(PhoneProfile.IncomingMode.SECURITY_CODES.ordinal());
         outgoingModeSpinner.setSelection(PhoneProfile.OutgoingMode.SHORT_CODES.ordinal());
@@ -317,12 +395,16 @@ public final class MainActivity extends Activity {
         incomingBlockInput.setText("");
         outgoingAllowInput.setText("");
         outgoingBlockInput.setText("");
-        setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules", false);
-        setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules", false);
+        updateEditorVisibility();
     }
 
     private void editProfile(PhoneProfile profile) {
         editingOriginalNumber = profile.number;
+        advancedRulesShown = !profile.incomingAllowList.isEmpty()
+                || !profile.incomingBlockList.isEmpty()
+                || !profile.outgoingAllowList.isEmpty()
+                || !profile.outgoingBlockList.isEmpty();
+        editorTitle.setText("Edit phone");
         numberInput.setText(profile.number);
         incomingModeSpinner.setSelection(profile.incomingMode.ordinal());
         outgoingModeSpinner.setSelection(profile.outgoingMode.ordinal());
@@ -331,11 +413,30 @@ public final class MainActivity extends Activity {
         incomingBlockInput.setText(joinList(profile.incomingBlockList));
         outgoingAllowInput.setText(joinList(profile.outgoingAllowList));
         outgoingBlockInput.setText(joinList(profile.outgoingBlockList));
-        setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules",
-                !profile.incomingAllowList.isEmpty() || !profile.incomingBlockList.isEmpty());
-        setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules",
-                !profile.outgoingAllowList.isEmpty() || !profile.outgoingBlockList.isEmpty());
-        numberInput.requestFocus();
+        removeEditingLink.setVisibility(View.VISIBLE);
+        updateEditorVisibility();
+        showEditor();
+    }
+
+    private void updateEditorVisibility() {
+        if (incomingModeSpinner == null || outgoingModeSpinner == null
+                || incomingRulesContainer == null || outgoingRulesContainer == null) return;
+
+        PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.values()[
+                incomingModeSpinner.getSelectedItemPosition()];
+        PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.values()[
+                outgoingModeSpinner.getSelectedItemPosition()];
+
+        codeCopyFollowupCheck.setVisibility(
+                incomingMode == PhoneProfile.IncomingMode.OFF ? View.GONE : View.VISIBLE);
+
+        boolean incomingRulesNeeded = incomingMode == PhoneProfile.IncomingMode.SELECTED;
+        boolean outgoingRulesNeeded = outgoingMode == PhoneProfile.OutgoingMode.SELECTED;
+        incomingRulesContainer.setVisibility(
+                advancedRulesShown || incomingRulesNeeded ? View.VISIBLE : View.GONE);
+        outgoingRulesContainer.setVisibility(
+                advancedRulesShown || outgoingRulesNeeded ? View.VISIBLE : View.GONE);
+        advancedRulesLink.setText(advancedRulesShown ? "Hide advanced rules" : "Advanced rules");
     }
 
     private void saveProfile() {
@@ -345,21 +446,25 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.values()[incomingModeSpinner.getSelectedItemPosition()];
-        PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.values()[outgoingModeSpinner.getSelectedItemPosition()];
+        PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.values()[
+                incomingModeSpinner.getSelectedItemPosition()];
+        PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.values()[
+                outgoingModeSpinner.getSelectedItemPosition()];
         List<String> incomingAllow = parseAddressList(incomingAllowInput.getText().toString());
         List<String> incomingBlock = parseAddressList(incomingBlockInput.getText().toString());
         List<String> outgoingAllow = parseAddressList(outgoingAllowInput.getText().toString());
         List<String> outgoingBlock = parseAddressList(outgoingBlockInput.getText().toString());
 
         if (incomingMode == PhoneProfile.IncomingMode.SELECTED && incomingAllow.isEmpty()) {
-            setRulesVisible(incomingRulesContainer, incomingRulesButton, "Sender rules", true);
-            Toast.makeText(this, "Add at least one sender to the incoming allow list.", Toast.LENGTH_LONG).show();
+            advancedRulesShown = true;
+            updateEditorVisibility();
+            Toast.makeText(this, "Add at least one allowed sender.", Toast.LENGTH_LONG).show();
             return;
         }
         if (outgoingMode == PhoneProfile.OutgoingMode.SELECTED && outgoingAllow.isEmpty()) {
-            setRulesVisible(outgoingRulesContainer, outgoingRulesButton, "Destination rules", true);
-            Toast.makeText(this, "Add at least one number to the outgoing allow list.", Toast.LENGTH_LONG).show();
+            advancedRulesShown = true;
+            updateEditorVisibility();
+            Toast.makeText(this, "Add at least one allowed destination.", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -373,7 +478,7 @@ public final class MainActivity extends Activity {
                 outgoingAllow,
                 outgoingBlock);
         if (!profile.hasAnyFeatureEnabled()) {
-            Toast.makeText(this, "Choose something to forward or allow in at least one direction.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Choose something for this phone to receive or send.", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -383,57 +488,86 @@ public final class MainActivity extends Activity {
         }
         ForwardingPreferences.saveProfile(this, profile);
         ForwardingPreferences.setStatus(this, "Saved forwarding setup for " + number + ".");
+        hideEditor();
         resetProfileEditor();
         refreshProfiles();
         refreshStatus();
         if (!allSmsPermissionsGranted()) requestSmsPermissions(false);
-        Toast.makeText(this, "Forwarding setup saved.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Saved.", Toast.LENGTH_SHORT).show();
     }
 
     private void refreshProfiles() {
         profilesContainer.removeAllViews();
         List<PhoneProfile> profiles = ForwardingPreferences.profiles(this);
         if (profiles.isEmpty()) {
-            TextView empty = body("No downstream phone configured yet.");
-            profilesContainer.addView(empty);
+            LinearLayout empty = new LinearLayout(this);
+            empty.setOrientation(LinearLayout.VERTICAL);
+            empty.setPadding(dp(16), dp(14), dp(16), dp(14));
+            empty.setBackground(roundedBackground(COLOR_SURFACE, 16));
+
+            TextView emptyTitle = heading("No phones yet", 17);
+            empty.addView(emptyTitle);
+            TextView emptyText = body("Add a phone to choose what it should receive and what it can send through this phone.");
+            emptyText.setPadding(0, dp(3), 0, 0);
+            empty.addView(emptyText);
+            profilesContainer.addView(empty, cardParams());
             return;
         }
 
         for (PhoneProfile profile : profiles) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setPadding(0, dp(5), 0, dp(10));
+            card.setPadding(dp(16), dp(13), dp(14), dp(13));
+            card.setBackground(roundedBackground(COLOR_SURFACE, 16));
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setOnClickListener(v -> editProfile(profile));
 
-            TextView summary = body(profile.summary());
-            summary.setTextIsSelectable(true);
+            LinearLayout top = new LinearLayout(this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView number = heading(profile.number, 17);
+            top.addView(number, weighted());
+            TextView edit = link("Edit ›");
+            edit.setPadding(dp(12), dp(2), 0, dp(2));
+            top.addView(edit);
+            card.addView(top, fullWidth());
+
+            TextView summary = body(compactSummary(profile));
+            summary.setPadding(0, dp(4), 0, 0);
             card.addView(summary);
-
-            LinearLayout actions = new LinearLayout(this);
-            actions.setOrientation(LinearLayout.HORIZONTAL);
-
-            Button edit = new Button(this);
-            edit.setText("Edit");
-            edit.setOnClickListener(v -> editProfile(profile));
-            actions.addView(edit, weighted());
-
-            Button remove = new Button(this);
-            remove.setText("Remove");
-            remove.setOnClickListener(v -> confirmRemoveProfile(profile));
-            actions.addView(remove, weighted());
-
-            card.addView(actions, fullWidth());
-            profilesContainer.addView(card, fullWidth());
+            profilesContainer.addView(card, cardParams());
         }
     }
 
-    private void confirmRemoveProfile(PhoneProfile profile) {
+    private String compactSummary(PhoneProfile profile) {
+        String incoming;
+        switch (profile.incomingMode) {
+            case ALL: incoming = "all messages"; break;
+            case SECURITY_CODES: incoming = "security codes"; break;
+            case SELECTED: incoming = "selected senders"; break;
+            default: incoming = "nothing";
+        }
+
+        String outgoing;
+        switch (profile.outgoingMode) {
+            case ANY: outgoing = "any number"; break;
+            case SHORT_CODES: outgoing = "short codes"; break;
+            case SELECTED: outgoing = "selected numbers"; break;
+            default: outgoing = "nothing";
+        }
+        return "Receives " + incoming + "  •  Sends to " + outgoing;
+    }
+
+    private void confirmRemoveNumber(String number) {
         new AlertDialog.Builder(this)
-                .setTitle("Remove downstream phone?")
-                .setMessage("Remove " + profile.number + " and all of its forwarding rules?")
+                .setTitle("Remove phone?")
+                .setMessage("Remove " + number + " and its forwarding rules?")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Remove", (dialog, which) -> {
-                    ForwardingPreferences.removeProfile(this, profile.number);
-                    if (ShortCodeRelay.sameAddress(editingOriginalNumber, profile.number)) resetProfileEditor();
+                    ForwardingPreferences.removeProfile(this, number);
+                    hideEditor();
+                    resetProfileEditor();
                     refreshProfiles();
                     refreshStatus();
                 })
@@ -442,11 +576,12 @@ public final class MainActivity extends Activity {
 
     private void confirmDeleteSavedSetup() {
         new AlertDialog.Builder(this)
-                .setTitle("Delete saved setup?")
-                .setMessage("This removes every downstream phone and its forwarding rules. It does not revoke Android SMS permissions.")
+                .setTitle("Delete all setup?")
+                .setMessage("This removes every configured phone and forwarding rule. Android SMS permissions stay authorized.")
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Delete", (dialog, which) -> {
                     ForwardingPreferences.deleteSavedSetup(this);
+                    hideEditor();
                     resetProfileEditor();
                     refreshProfiles();
                     refreshStatus();
@@ -497,17 +632,17 @@ public final class MainActivity extends Activity {
     }
 
     private void showRestrictedSettingsHelp() {
-        String message = "Android is still blocking one or both SMS permissions. Because this app is sideloaded, do this once:\n\n"
-                + "1. Tap Open App Info.\n"
+        String message = "Android is blocking one or both SMS permissions. Because this app is sideloaded, do this once:\n\n"
+                + "1. Open App Info.\n"
                 + "2. Tap the top-right ⋮ menu.\n"
-                + "3. Tap Allow restricted settings and confirm.\n"
-                + "4. Come back here.\n\n"
-                + "The app will automatically ask for Receive SMS and Send SMS again when you return.";
+                + "3. Tap Allow restricted settings.\n"
+                + "4. Return here.\n\n"
+                + "The SMS permission request will retry automatically.";
         new AlertDialog.Builder(this)
-                .setTitle("One-time Android authorization")
+                .setTitle("One-time authorization")
                 .setMessage(message)
                 .setNegativeButton("Not now", null)
-                .setNeutralButton("Retry permissions", (dialog, which) -> requestSmsPermissions(true))
+                .setNeutralButton("Retry", (dialog, which) -> requestSmsPermissions(true))
                 .setPositiveButton("Open App Info", (dialog, which) -> openAppSettings())
                 .show();
     }
@@ -542,7 +677,7 @@ public final class MainActivity extends Activity {
                     showRestrictedSettingsHelp();
                 } else {
                     Toast.makeText(this,
-                            "Both Receive SMS and Send SMS permissions are required.",
+                            "Receive SMS and Send SMS are both required.",
                             Toast.LENGTH_LONG).show();
                 }
             }
@@ -559,14 +694,122 @@ public final class MainActivity extends Activity {
         boolean send = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
         if (receive && send) {
             permissionStatus.setText("✓ SMS access ready");
-            permissionHelp.setText("Incoming messages can be filtered, forwarded, and replied to using the rules below.");
-            authorizeButton.setText("SMS access authorized ✓");
+            permissionStatus.setTextColor(COLOR_SUCCESS);
+            permissionHelp.setVisibility(View.GONE);
+            authorizeButton.setVisibility(View.GONE);
         } else {
-            permissionStatus.setText("SMS access needs attention");
-            permissionHelp.setText("Authorize Receive SMS and Send SMS. If Android blocks the prompt, the app will guide the one-time restricted-settings step.");
-            authorizeButton.setText("Authorize SMS access");
+            permissionStatus.setText("SMS access required");
+            permissionStatus.setTextColor(COLOR_TEXT);
+            permissionHelp.setText("Authorize once so this app can receive and forward texts. If Android blocks it, the app will guide the restricted-settings step.");
+            permissionHelp.setVisibility(View.VISIBLE);
+            authorizeButton.setVisibility(View.VISIBLE);
         }
-        forwardingStatus.setText("Last status: " + ForwardingPreferences.status(this));
+
+        String status = ForwardingPreferences.status(this);
+        if (needsAttention(status)) {
+            forwardingStatus.setText(status);
+            forwardingStatus.setVisibility(View.VISIBLE);
+        } else {
+            forwardingStatus.setVisibility(View.GONE);
+        }
+    }
+
+    private boolean needsAttention(String status) {
+        if (status == null) return false;
+        String lower = status.toLowerCase();
+        return lower.contains("failed")
+                || lower.contains("missing")
+                || lower.contains("denied")
+                || lower.contains("ignored")
+                || lower.contains("cannot")
+                || lower.contains("blocked")
+                || lower.contains("no downstream")
+                || lower.contains("could not");
+    }
+
+    private TextView heading(String text, int size) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(COLOR_TEXT);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
+    }
+
+    private TextView body(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(15);
+        view.setTextColor(COLOR_MUTED);
+        view.setLineSpacing(0, 1.08f);
+        return view;
+    }
+
+    private TextView link(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(15);
+        view.setTextColor(COLOR_ACCENT);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setClickable(true);
+        view.setFocusable(true);
+        return view;
+    }
+
+    private Button primaryButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setTextSize(16);
+        button.setTextColor(0xFFFFFFFF);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setBackgroundTintList(ColorStateList.valueOf(COLOR_ACCENT));
+        button.setMinHeight(dp(48));
+        return button;
+    }
+
+    private Button secondaryButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setTextSize(15);
+        button.setTextColor(COLOR_TEXT);
+        button.setBackgroundTintList(ColorStateList.valueOf(COLOR_BORDER));
+        button.setMinHeight(dp(46));
+        return button;
+    }
+
+    private void addLabel(LinearLayout content, String text) {
+        TextView label = body(text);
+        label.setTextColor(COLOR_TEXT);
+        label.setTextSize(13);
+        label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        label.setPadding(0, dp(14), 0, dp(1));
+        content.addView(label);
+    }
+
+    private GradientDrawable roundedBackground(int color, int radiusDp) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(radiusDp));
+        if (color == COLOR_SURFACE) background.setStroke(dp(1), COLOR_BORDER);
+        return background;
+    }
+
+    private LinearLayout.LayoutParams fullWidth() {
+        return new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+    }
+
+    private LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+    }
+
+    private LinearLayout.LayoutParams cardParams() {
+        LinearLayout.LayoutParams params = fullWidth();
+        params.bottomMargin = dp(10);
+        return params;
     }
 
     private int dp(int value) {
