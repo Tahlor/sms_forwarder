@@ -9,6 +9,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 final class ForwardingPreferences {
@@ -18,7 +19,6 @@ final class ForwardingPreferences {
     private static final String KEY_USER_DELETED = "user_deleted_setup";
     private static final String KEY_STATUS = "status";
 
-    // Legacy single-number keys, migrated once into phone profiles.
     private static final String KEY_DESTINATION = "destination";
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_CODE_ONLY = "code_only";
@@ -38,14 +38,10 @@ final class ForwardingPreferences {
 
     static List<PhoneProfile> profiles(Context context) {
         SharedPreferences preferences = prefs(context);
-        if (preferences.getBoolean(KEY_USER_DELETED, false)) {
-            return new ArrayList<>();
-        }
+        if (preferences.getBoolean(KEY_USER_DELETED, false)) return new ArrayList<>();
 
         String encoded = preferences.getString(KEY_PROFILES, null);
-        if (encoded == null) {
-            return migrateLegacySettings(context);
-        }
+        if (encoded == null) return migrateLegacySettings(context);
 
         List<PhoneProfile> result = new ArrayList<>();
         try {
@@ -55,12 +51,24 @@ final class ForwardingPreferences {
                 if (object == null) continue;
                 String number = object.optString("number", "").trim();
                 if (number.isEmpty()) continue;
+
+                PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.fromStored(
+                        nullableString(object, "incomingMode"),
+                        object.optBoolean("forwardEnabled", true),
+                        object.optBoolean("codeOnly", true));
+                PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.fromStored(
+                        nullableString(object, "outgoingMode"),
+                        object.optBoolean("relayEnabled", true));
+
                 result.add(new PhoneProfile(
                         number,
-                        object.optBoolean("forwardEnabled", true),
-                        object.optBoolean("codeOnly", true),
+                        incomingMode,
+                        readStringList(object.optJSONArray("incomingAllowList")),
+                        readStringList(object.optJSONArray("incomingBlockList")),
                         object.optBoolean("codeCopyFollowup", true),
-                        object.optBoolean("relayEnabled", true)));
+                        outgoingMode,
+                        readStringList(object.optJSONArray("outgoingAllowList")),
+                        readStringList(object.optJSONArray("outgoingBlockList"))));
             }
         } catch (JSONException ignored) {
             setStatus(context, "Saved phone profiles could not be read; open the app and save them again.");
@@ -90,28 +98,12 @@ final class ForwardingPreferences {
             if (!ShortCodeRelay.sameAddress(profile.number, number)) updated.add(profile);
         }
         saveProfiles(context, updated);
-        clearShortCodeRelay(context, number);
+        clearReplyRelay(context, number);
     }
 
     static void saveProfiles(Context context, List<PhoneProfile> profiles) {
-        JSONArray array = new JSONArray();
-        for (PhoneProfile profile : profiles) {
-            if (profile == null || profile.number.isEmpty()) continue;
-            JSONObject object = new JSONObject();
-            try {
-                object.put("number", profile.number);
-                object.put("forwardEnabled", profile.forwardEnabled);
-                object.put("codeOnly", profile.codeOnly);
-                object.put("codeCopyFollowup", profile.codeCopyFollowup);
-                object.put("relayEnabled", profile.relayEnabled);
-                array.put(object);
-            } catch (JSONException ignored) {
-                // Values are primitive and should not fail; skip a malformed entry if they do.
-            }
-        }
-
         prefs(context).edit()
-                .putString(KEY_PROFILES, array.toString())
+                .putString(KEY_PROFILES, encodeProfiles(profiles).toString())
                 .putBoolean(KEY_USER_DELETED, false)
                 .apply();
         new BackupManager(context).dataChanged();
@@ -134,34 +126,36 @@ final class ForwardingPreferences {
         runtimePrefs(context).edit().putString(KEY_STATUS, status).apply();
     }
 
-    static void startShortCodeRelay(Context context, String controllerNumber, String shortCode,
-                                    long nowMillis) {
+    static void startReplyRelay(Context context, String controllerNumber, String destination,
+                                long nowMillis) {
         String key = runtimeKey(controllerNumber);
         runtimePrefs(context).edit()
-                .putString("active_short_code_" + key, shortCode)
-                .putLong("active_short_code_expires_at_" + key, nowMillis + ShortCodeRelay.WINDOW_MS)
+                .putString("active_reply_destination_" + key, destination)
+                .putLong("active_reply_expires_at_" + key, nowMillis + ShortCodeRelay.WINDOW_MS)
                 .apply();
     }
 
-    static String activeShortCode(Context context, String controllerNumber, long nowMillis) {
+    static String activeReplyDestination(Context context, String controllerNumber, long nowMillis) {
         String key = runtimeKey(controllerNumber);
         SharedPreferences preferences = runtimePrefs(context);
-        String shortCodeKey = "active_short_code_" + key;
-        String expiresKey = "active_short_code_expires_at_" + key;
+        String destinationKey = "active_reply_destination_" + key;
+        String expiresKey = "active_reply_expires_at_" + key;
         long expiresAt = preferences.getLong(expiresKey, 0L);
-        String shortCode = preferences.getString(shortCodeKey, "");
-        if (shortCode == null || shortCode.isEmpty() || nowMillis > expiresAt) {
-            if ((shortCode != null && !shortCode.isEmpty()) || expiresAt != 0L) {
-                preferences.edit().remove(shortCodeKey).remove(expiresKey).apply();
+        String destination = preferences.getString(destinationKey, "");
+        if (destination == null || destination.isEmpty() || nowMillis > expiresAt) {
+            if ((destination != null && !destination.isEmpty()) || expiresAt != 0L) {
+                preferences.edit().remove(destinationKey).remove(expiresKey).apply();
             }
             return "";
         }
-        return shortCode;
+        return destination;
     }
 
-    private static void clearShortCodeRelay(Context context, String controllerNumber) {
+    private static void clearReplyRelay(Context context, String controllerNumber) {
         String key = runtimeKey(controllerNumber);
         runtimePrefs(context).edit()
+                .remove("active_reply_destination_" + key)
+                .remove("active_reply_expires_at_" + key)
                 .remove("active_short_code_" + key)
                 .remove("active_short_code_expires_at_" + key)
                 .apply();
@@ -197,21 +191,8 @@ final class ForwardingPreferences {
             migrated.add(new PhoneProfile(controller, false, true, false, true));
         }
 
-        JSONArray array = new JSONArray();
-        for (PhoneProfile profile : migrated) {
-            JSONObject object = new JSONObject();
-            try {
-                object.put("number", profile.number);
-                object.put("forwardEnabled", profile.forwardEnabled);
-                object.put("codeOnly", profile.codeOnly);
-                object.put("codeCopyFollowup", profile.codeCopyFollowup);
-                object.put("relayEnabled", profile.relayEnabled);
-                array.put(object);
-            } catch (JSONException ignored) {}
-        }
-
         preferences.edit()
-                .putString(KEY_PROFILES, array.toString())
+                .putString(KEY_PROFILES, encodeProfiles(migrated).toString())
                 .remove(KEY_DESTINATION)
                 .remove(KEY_ENABLED)
                 .remove(KEY_CODE_ONLY)
@@ -221,6 +202,47 @@ final class ForwardingPreferences {
                 .apply();
         new BackupManager(context).dataChanged();
         return migrated;
+    }
+
+    private static JSONArray encodeProfiles(List<PhoneProfile> profiles) {
+        JSONArray array = new JSONArray();
+        if (profiles == null) return array;
+        for (PhoneProfile profile : profiles) {
+            if (profile == null || profile.number.isEmpty()) continue;
+            JSONObject object = new JSONObject();
+            try {
+                object.put("number", profile.number);
+                object.put("incomingMode", profile.incomingMode.name());
+                object.put("incomingAllowList", toJsonArray(profile.incomingAllowList));
+                object.put("incomingBlockList", toJsonArray(profile.incomingBlockList));
+                object.put("codeCopyFollowup", profile.codeCopyFollowup);
+                object.put("outgoingMode", profile.outgoingMode.name());
+                object.put("outgoingAllowList", toJsonArray(profile.outgoingAllowList));
+                object.put("outgoingBlockList", toJsonArray(profile.outgoingBlockList));
+                array.put(object);
+            } catch (JSONException ignored) {}
+        }
+        return array;
+    }
+
+    private static JSONArray toJsonArray(List<String> values) {
+        JSONArray array = new JSONArray();
+        if (values != null) for (String value : values) array.put(value);
+        return array;
+    }
+
+    private static List<String> readStringList(JSONArray array) {
+        if (array == null || array.length() == 0) return Collections.emptyList();
+        ArrayList<String> result = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            String value = array.optString(i, "").trim();
+            if (!value.isEmpty()) result.add(value);
+        }
+        return result;
+    }
+
+    private static String nullableString(JSONObject object, String key) {
+        return object.has(key) ? object.optString(key, null) : null;
     }
 
     private static String safe(String value) {
