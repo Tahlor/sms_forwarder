@@ -13,20 +13,27 @@ import static org.junit.Assert.assertTrue;
 
 public class ShortCodeRelayTest {
     @Test
-    public void parsesBracketedSixDigitTargetAndTrimsPayload() {
+    public void parsesBracketedShortCodeAndTrimsPayload() {
         ShortCodeRelay.Command command = ShortCodeRelay.parseCommand(" [711711]   SAVE  ");
-        assertEquals("711711", command.shortCode);
+        assertEquals("711711", command.destination);
         assertEquals("SAVE", command.payload);
 
         command = ShortCodeRelay.parseCommand("[711-711] hello there");
-        assertEquals("711711", command.shortCode);
+        assertEquals("711711", command.destination);
         assertEquals("hello there", command.payload);
+    }
+
+    @Test
+    public void parsesNormalPhoneNumberTargets() {
+        ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[+1 (801) 555-1212] see you at 7");
+        assertEquals("18015551212", command.destination);
+        assertEquals("see you at 7", command.payload);
     }
 
     @Test
     public void permitsEmptyPayloadToOpenReplyWindow() {
         ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[711-711]   ");
-        assertEquals("711711", command.shortCode);
+        assertEquals("711711", command.destination);
         assertEquals("", command.payload);
     }
 
@@ -40,10 +47,10 @@ public class ShortCodeRelayTest {
         ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[711711] SAVE");
         PhoneProfile matched = ShortCodeRelay.findRegisteredProfile(profiles, "801-555-1212");
 
-        assertEquals("711711", command.shortCode);
+        assertEquals("711711", command.destination);
         assertEquals("SAVE", command.payload);
         assertSame(downstream, matched);
-        assertTrue(matched.relayEnabled);
+        assertEquals(PhoneProfile.OutgoingMode.SHORT_CODES, matched.outgoingMode);
     }
 
     @Test
@@ -61,11 +68,18 @@ public class ShortCodeRelayTest {
     }
 
     @Test
-    public void rejectsNonSixDigitOrUnbracketedTargets() {
+    public void rejectsUnbracketedOrInvalidTargets() {
         assertNull(ShortCodeRelay.parseCommand("711711 SAVE"));
-        assertNull(ShortCodeRelay.parseCommand("[71171] SAVE"));
-        assertNull(ShortCodeRelay.parseCommand("[711-7111] SAVE"));
+        assertNull(ShortCodeRelay.parseCommand("[12] SAVE"));
+        assertNull(ShortCodeRelay.parseCommand("[1234567890123456] SAVE"));
         assertNull(ShortCodeRelay.parseCommand(null));
+    }
+
+    @Test
+    public void classifiesShortCodesSeparatelyFromPhoneNumbers() {
+        assertTrue(ShortCodeRelay.isShortCode("711711"));
+        assertTrue(ShortCodeRelay.isShortCode("12345"));
+        assertFalse(ShortCodeRelay.isShortCode("8015551212"));
     }
 
     @Test
@@ -77,9 +91,9 @@ public class ShortCodeRelayTest {
     }
 
     @Test
-    public void matchesExactSixDigitShortcodeSender() {
+    public void matchesShortCodeSenderFormatting() {
         assertTrue(ShortCodeRelay.senderIsShortCode("711711", "711711"));
         assertFalse(ShortCodeRelay.senderIsShortCode("1711711", "711711"));
-        assertFalse(ShortCodeRelay.senderIsShortCode("711711", "71171"));
+        assertTrue(ShortCodeRelay.senderIsShortCode("12345", "12345"));
     }
 }
