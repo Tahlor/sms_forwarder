@@ -1,0 +1,13 @@
+[Unit]
+Description=Build and publish the signed SMS Forwarder APK
+After=network-online.target
+Wants=network-online.target
+ConditionHost=archimedes
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/Projects/sms_forwarder
+EnvironmentFile=-%h/.config/sms-forwarder/deploy.env
+ExecStart=/home/ubuntu/Projects/sms_forwarder/scripts/deploy_archimedes.sh
+TimeoutStartSec=20min
+Nice=10

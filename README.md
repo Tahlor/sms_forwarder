@@ -144,4 +144,25 @@ Canonical release builds use the persistent signer and:
 gradle testDebugUnitTest assembleRelease
 ```
 
-Version: **0.1.6 / versionCode 7**.
+Version: **0.1.7 / versionCode 8**.
+
+## Automated Archimedes deployment
+
+The Archimedes deployment is intentionally gated and repeatable:
+
+1. The host-side agent bridge fast-forwards a clean `master` checkout from
+   GitHub on its five-minute synchronization interval.
+2. `install/install_archimedes.sh` installs a user-systemd timer. The timer
+   runs `scripts/deploy_archimedes.sh`, which pulls any missed fast-forward,
+   runs the unit tests and signed release build, verifies the package ID,
+   version, and persistent release certificate, and publishes the APK.
+3. A failed deployment remains visible in the systemd journal and can be
+   investigated through the allowlisted `sms_forwarder` repository and
+   `sms_forwarder_deploy` service in agent_bridge. The agent should repair a
+   failure only after inspecting the failure and preserving a clean checkout.
+
+The signed APK is published to the restricted phone-share handoff directory
+and to `/var/www/html/apks/sms-code-forwarder-latest.apk`, which is the URL
+opened by **Update app**. The deploy script refuses dirty or divergent
+checkouts and refuses to publish a version code that is not newer than the
+currently public APK.

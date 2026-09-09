@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically deploy new SMS Forwarder master commits
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=sms-forwarder-deploy.service
+
+[Install]
+WantedBy=timers.target
