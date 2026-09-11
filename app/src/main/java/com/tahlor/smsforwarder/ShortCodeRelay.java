@@ -55,7 +55,23 @@ final class ShortCodeRelay {
 
     static String formatSenderForDisplay(String sender) {
         String digits = digitsOnly(sender);
-        if (digits.length() == 6) return formatDestination(digits);
+        if (digits.length() == 11 && digits.startsWith("1")) {
+            return "+1 " + digits.substring(1, 4) + "-" + digits.substring(4, 7)
+                    + "-" + digits.substring(7);
+        }
+        if (digits.length() == 10) {
+            return digits.substring(0, 3) + "-" + digits.substring(3, 6)
+                    + "-" + digits.substring(6);
+        }
+        if (digits.length() == 6) {
+            return digits.substring(0, 3) + "-" + digits.substring(3);
+        }
+        if (digits.length() == 5) {
+            return digits.substring(0, 2) + "-" + digits.substring(2);
+        }
+        if (digits.length() == 4) {
+            return digits.substring(0, 2) + "-" + digits.substring(2);
+        }
         return sender == null ? "" : sender;
     }
 
