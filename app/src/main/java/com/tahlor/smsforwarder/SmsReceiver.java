@@ -70,7 +70,6 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
 
             boolean queuedAnywhere = false;
-            boolean waitingForFollowup = false;
             for (PhoneProfile profile : profiles) {
                 if (!profile.permitsIncoming(sender, body)) continue;
 
@@ -79,11 +78,9 @@ public final class SmsReceiver extends BroadcastReceiver {
                 String extractedCode = MessageFilter.extractCode(body);
                 try {
                     SmsManager smsManager = SmsManager.getDefault();
+                    sendTrackedMessage(context, smsManager, profile.number, forwarded);
                     if (profile.codeCopyFollowup && extractedCode != null) {
-                        sendFullThenCode(context, smsManager, profile.number, forwarded, extractedCode);
-                        waitingForFollowup = true;
-                    } else {
-                        sendMessage(smsManager, profile.number, forwarded);
+                        smsManager.sendTextMessage(profile.number, null, extractedCode, null, null);
                     }
                     queuedAnywhere = true;
                 } catch (SecurityException e) {
@@ -93,13 +90,8 @@ public final class SmsReceiver extends BroadcastReceiver {
                 }
             }
             if (queuedAnywhere) {
-                if (waitingForFollowup) {
-                    ForwardingPreferences.setStatus(context,
-                            "Sending the full forwarded SMS first; code-only copy will follow only after it succeeds.");
-                } else {
-                    ForwardingPreferences.setStatus(context,
-                            "Forwarded the incoming SMS to matching downstream phone(s).");
-                }
+                ForwardingPreferences.setStatus(context,
+                        "Queued the full forwarded SMS and any code-only copy immediately.");
             } else {
                 ForwardingPreferences.setStatus(context,
                         "Received SMS; current forwarding rules did not match it.");
@@ -184,10 +176,10 @@ public final class SmsReceiver extends BroadcastReceiver {
         return context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private static void sendFullThenCode(Context context, SmsManager smsManager,
-                                         String destination, String fullMessage, String code) {
-        ArrayList<String> parts = smsManager.divideMessage(fullMessage);
-        if (parts.isEmpty()) parts.add(fullMessage);
+    private static void sendTrackedMessage(Context context, SmsManager smsManager,
+                                           String destination, String message) {
+        ArrayList<String> parts = smsManager.divideMessage(message);
+        if (parts.isEmpty()) parts.add(message);
 
         String transactionId = UUID.randomUUID().toString();
         ForwardDeliveryTracker.start(context, transactionId, parts.size());
@@ -195,9 +187,7 @@ public final class SmsReceiver extends BroadcastReceiver {
         for (int i = 0; i < parts.size(); i++) {
             Intent callback = new Intent(context, ForwardDeliveryReceiver.class)
                     .setAction(ForwardDeliveryReceiver.ACTION_FULL_PART_SENT)
-                    .putExtra(ForwardDeliveryReceiver.EXTRA_TRANSACTION_ID, transactionId)
-                    .putExtra(ForwardDeliveryReceiver.EXTRA_DESTINATION, destination)
-                    .putExtra(ForwardDeliveryReceiver.EXTRA_CODE, code);
+                    .putExtra(ForwardDeliveryReceiver.EXTRA_TRANSACTION_ID, transactionId);
             int requestCode = (transactionId + ":" + i).hashCode();
             sentIntents.add(PendingIntent.getBroadcast(
                     context,
@@ -208,7 +198,7 @@ public final class SmsReceiver extends BroadcastReceiver {
 
         try {
             if (parts.size() == 1) {
-                smsManager.sendTextMessage(destination, null, fullMessage, sentIntents.get(0), null);
+                smsManager.sendTextMessage(destination, null, message, sentIntents.get(0), null);
             } else {
                 smsManager.sendMultipartTextMessage(destination, null, parts, sentIntents, null);
             }
