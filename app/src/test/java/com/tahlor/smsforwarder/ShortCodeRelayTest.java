@@ -61,10 +61,12 @@ public class ShortCodeRelayTest {
     }
 
     @Test
-    public void formatsSixDigitShortcodesToAvoidOtpConfusion() {
+    public void formatsSenderLabelsSoTheyDoNotLookLikeOtpCandidates() {
         assertEquals("711-711", ShortCodeRelay.formatShortCode("711711"));
         assertEquals("711-711", ShortCodeRelay.formatSenderForDisplay("711711"));
-        assertEquals("+18015551212", ShortCodeRelay.formatSenderForDisplay("+18015551212"));
+        assertEquals("12-345", ShortCodeRelay.formatSenderForDisplay("12345"));
+        assertEquals("801-555-1212", ShortCodeRelay.formatSenderForDisplay("8015551212"));
+        assertEquals("+1 801-555-1212", ShortCodeRelay.formatSenderForDisplay("+18015551212"));
     }
 
     @Test
