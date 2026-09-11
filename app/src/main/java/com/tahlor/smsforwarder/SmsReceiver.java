@@ -212,7 +212,7 @@ public final class SmsReceiver extends BroadcastReceiver {
             } else {
                 smsManager.sendMultipartTextMessage(destination, null, parts, sentIntents, null);
             }
-        } catch (RuntimeException | SecurityException e) {
+        } catch (RuntimeException e) {
             ForwardDeliveryTracker.cancel(context, transactionId);
             throw e;
         }
