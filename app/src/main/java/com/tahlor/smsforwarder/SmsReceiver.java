@@ -1,6 +1,7 @@
 package com.tahlor.smsforwarder;
 
 import android.Manifest;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public final class SmsReceiver extends BroadcastReceiver {
     static final String FORWARD_PREFIX = "[SMS Forwarder]";
@@ -25,12 +27,16 @@ public final class SmsReceiver extends BroadcastReceiver {
         if (messages == null || messages.length == 0) return;
 
         Map<String, StringBuilder> bodiesBySender = new LinkedHashMap<>();
+        Map<String, Long> timestampsBySender = new LinkedHashMap<>();
         for (SmsMessage message : messages) {
             if (message == null) continue;
             String sender = message.getOriginatingAddress();
             if (sender == null || sender.isEmpty()) sender = "(unknown sender)";
             bodiesBySender.computeIfAbsent(sender, ignored -> new StringBuilder())
                     .append(message.getMessageBody() == null ? "" : message.getMessageBody());
+            long timestamp = message.getTimestampMillis();
+            Long existing = timestampsBySender.get(sender);
+            if (existing == null || timestamp < existing) timestampsBySender.put(sender, timestamp);
         }
 
         List<PhoneProfile> profiles = ForwardingPreferences.profiles(context);
@@ -40,10 +46,20 @@ public final class SmsReceiver extends BroadcastReceiver {
             return;
         }
 
+        long now = System.currentTimeMillis();
         for (Map.Entry<String, StringBuilder> entry : bodiesBySender.entrySet()) {
             String sender = entry.getKey();
             String body = entry.getValue().toString();
             if (body.startsWith(FORWARD_PREFIX)) continue;
+
+            long smsTimestamp = timestampsBySender.containsKey(sender)
+                    ? timestampsBySender.get(sender) : 0L;
+            if (!IncomingMessageDeduplicator.shouldProcess(
+                    context, sender, smsTimestamp, body, now)) {
+                ForwardingPreferences.setStatus(context,
+                        "Ignored a duplicate delivery of the same incoming SMS.");
+                continue;
+            }
 
             if (handleDownstreamCommand(context, profiles, sender, body)) continue;
             if (handleActiveReply(context, profiles, sender, body)) continue;
@@ -53,36 +69,37 @@ public final class SmsReceiver extends BroadcastReceiver {
                 continue;
             }
 
-            boolean forwardedAnywhere = false;
+            boolean queuedAnywhere = false;
+            boolean waitingForFollowup = false;
             for (PhoneProfile profile : profiles) {
                 if (!profile.permitsIncoming(sender, body)) continue;
 
                 String displaySender = ShortCodeRelay.formatSenderForDisplay(sender);
-                StringBuilder forwarded = new StringBuilder(FORWARD_PREFIX)
-                        .append("\nFrom: ").append(displaySender).append("\n")
-                        .append(body);
-                String replyTarget = ShortCodeRelay.normalizeDestination(sender);
-                if (!replyTarget.isEmpty() && profile.outgoingMode != PhoneProfile.OutgoingMode.OFF) {
-                    forwarded.append("\n\nReply: [").append(replyTarget).append("] your message");
-                }
-
+                String forwarded = FORWARD_PREFIX + "\nFrom: " + displaySender + "\n" + body;
                 String extractedCode = MessageFilter.extractCode(body);
                 try {
                     SmsManager smsManager = SmsManager.getDefault();
-                    sendMessage(smsManager, profile.number, forwarded.toString());
                     if (profile.codeCopyFollowup && extractedCode != null) {
-                        smsManager.sendTextMessage(profile.number, null, extractedCode, null, null);
+                        sendFullThenCode(context, smsManager, profile.number, forwarded, extractedCode);
+                        waitingForFollowup = true;
+                    } else {
+                        sendMessage(smsManager, profile.number, forwarded);
                     }
-                    forwardedAnywhere = true;
+                    queuedAnywhere = true;
                 } catch (SecurityException e) {
                     ForwardingPreferences.setStatus(context, "Android denied SMS forwarding permission.");
                 } catch (RuntimeException e) {
                     ForwardingPreferences.setStatus(context, "Forwarding failed for " + profile.number + ".");
                 }
             }
-            if (forwardedAnywhere) {
-                ForwardingPreferences.setStatus(context,
-                        "Forwarded the incoming SMS to matching downstream phone(s).");
+            if (queuedAnywhere) {
+                if (waitingForFollowup) {
+                    ForwardingPreferences.setStatus(context,
+                            "Sending the full forwarded SMS first; code-only copy will follow only after it succeeds.");
+                } else {
+                    ForwardingPreferences.setStatus(context,
+                            "Forwarded the incoming SMS to matching downstream phone(s).");
+                }
             } else {
                 ForwardingPreferences.setStatus(context,
                         "Received SMS; current forwarding rules did not match it.");
@@ -165,6 +182,40 @@ public final class SmsReceiver extends BroadcastReceiver {
 
     private static boolean hasSendPermission(Context context) {
         return context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private static void sendFullThenCode(Context context, SmsManager smsManager,
+                                         String destination, String fullMessage, String code) {
+        ArrayList<String> parts = smsManager.divideMessage(fullMessage);
+        if (parts.isEmpty()) parts.add(fullMessage);
+
+        String transactionId = UUID.randomUUID().toString();
+        ForwardDeliveryTracker.start(context, transactionId, parts.size());
+        ArrayList<PendingIntent> sentIntents = new ArrayList<>(parts.size());
+        for (int i = 0; i < parts.size(); i++) {
+            Intent callback = new Intent(context, ForwardDeliveryReceiver.class)
+                    .setAction(ForwardDeliveryReceiver.ACTION_FULL_PART_SENT)
+                    .putExtra(ForwardDeliveryReceiver.EXTRA_TRANSACTION_ID, transactionId)
+                    .putExtra(ForwardDeliveryReceiver.EXTRA_DESTINATION, destination)
+                    .putExtra(ForwardDeliveryReceiver.EXTRA_CODE, code);
+            int requestCode = (transactionId + ":" + i).hashCode();
+            sentIntents.add(PendingIntent.getBroadcast(
+                    context,
+                    requestCode,
+                    callback,
+                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE));
+        }
+
+        try {
+            if (parts.size() == 1) {
+                smsManager.sendTextMessage(destination, null, fullMessage, sentIntents.get(0), null);
+            } else {
+                smsManager.sendMultipartTextMessage(destination, null, parts, sentIntents, null);
+            }
+        } catch (RuntimeException | SecurityException e) {
+            ForwardDeliveryTracker.cancel(context, transactionId);
+            throw e;
+        }
     }
 
     private static void sendMessage(SmsManager smsManager, String destination, String message) {
