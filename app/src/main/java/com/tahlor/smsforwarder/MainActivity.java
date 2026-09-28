@@ -716,11 +716,10 @@ public final class MainActivity extends Activity {
     }
 
     private String compactSummary(PhoneProfile profile) {
-        String summary = "Allowed: " + profile.authorizationLabel()
+        return "Allowed: " + profile.authorizationLabel()
                 + "  •  Auto: " + profile.preferenceLabel()
-                + "  •  Sends: " + profile.outgoingLabel();
-        if (profile.allowRemoteCommands) summary += "  •  Remote admin";
-        return summary;
+                + "  •  Sends: " + profile.outgoingLabel()
+                + "  •  Remote admin: " + (profile.allowRemoteCommands ? "ON" : "OFF");
     }
 
     private void confirmRemoveNumber(String number) {
