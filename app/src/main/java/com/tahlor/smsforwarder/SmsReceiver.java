@@ -203,6 +203,24 @@ public final class SmsReceiver extends BroadcastReceiver {
     private static boolean handleManagementCommand(
             Context context, PhoneProfile controller,
             ShortCodeRelay.ManagementCommand command) {
+        if (command.action == ShortCodeRelay.ManagementAction.PING) {
+            if (!hasSendPermission(context)) {
+                ForwardingPreferences.setStatus(context,
+                        "PING reached SMS Forwarder from " + controller.number
+                                + ", but Send SMS access is missing.");
+                return true;
+            }
+            sendManagementReply(context, controller.number,
+                    "PING received. SMS path is working. Remote management: "
+                            + (controller.allowRemoteCommands ? "enabled" : "disabled")
+                            + ". Incoming auth: " + controller.authorizationLabel()
+                            + ". Auto-forward: " + controller.preferenceLabel()
+                            + ". Outgoing auth: " + controller.outgoingLabel() + ".");
+            ForwardingPreferences.setStatus(context,
+                    "PING received and answered for " + controller.number + ".");
+            return true;
+        }
+
         if (!controller.allowRemoteCommands) {
             ForwardingPreferences.setStatus(context,
                     "Blocked remote-management command from " + controller.number
@@ -225,9 +243,10 @@ public final class SmsReceiver extends BroadcastReceiver {
             case HELP:
                 sendManagementReply(context, controller.number,
                         "Commands:\n"
+                                + "PING - test SMS receipt + response without changing settings\n"
                                 + "AUTH <ANY|SELECTED|OFF> - hard incoming authorization\n"
-                                + "ALLOW <sender> - add to selected authorization\n"
-                                + "UNALLOW <sender> - remove authorization entry\n"
+                                + "ALLOW <sender> - authorize + always forward sender\n"
+                                + "UNALLOW <sender> - remove authorization + always-forward entry\n"
                                 + "BLOCK/UNBLOCK <sender> - hard deny/remove deny\n"
                                 + "MODE <CODES|ALL|SELECTED|OFF> - automatic forwarding\n"
                                 + "PREFER/UNPREFER <sender> - selected auto-forward list\n"
@@ -269,12 +288,19 @@ public final class SmsReceiver extends BroadcastReceiver {
                             "Could not update the authorization list.");
                     return true;
                 }
+                updated = ForwardingPreferences.addIncomingPreferredSender(
+                        context, controller.number, command.argument);
+                if (updated != null
+                        && updated.incomingPreference == PhoneProfile.IncomingPreference.OFF) {
+                    updated = ForwardingPreferences.setIncomingPreference(
+                            context, controller.number, PhoneProfile.IncomingPreference.SELECTED);
+                }
                 String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
                 sendManagementReply(context, controller.number,
-                        "Authorized " + display + ". This changes the hard security scope; "
-                                + "automatic forwarding still follows MODE.");
+                        "Allowed " + display + ": it is inside the security authorization "
+                                + "and will always forward unless blocked.");
                 ForwardingPreferences.setStatus(context,
-                        "Remote management authorized " + display + " for "
+                        "Remote management allowed and preferred " + display + " for "
                                 + controller.number + ".");
                 return true;
             }
@@ -286,9 +312,9 @@ public final class SmsReceiver extends BroadcastReceiver {
                         context, controller.number, command.argument);
                 String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
                 sendManagementReply(context, controller.number,
-                        "Removed " + display + " from the selected authorization list.");
+                        "Removed " + display + " from authorization and the always-forward list.");
                 ForwardingPreferences.setStatus(context,
-                        "Remote management removed incoming authorization for " + display
+                        "Remote management removed ALLOW for " + display
                                 + " on " + controller.number + ".");
                 return true;
             }
