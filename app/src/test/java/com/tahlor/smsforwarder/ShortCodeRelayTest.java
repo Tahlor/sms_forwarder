@@ -157,6 +157,12 @@ public class ShortCodeRelayTest {
         command = ShortCodeRelay.parseManagementCommand("HELP");
         assertEquals(ShortCodeRelay.ManagementAction.HELP, command.action);
 
+        command = ShortCodeRelay.parseManagementCommand("PING");
+        assertEquals(ShortCodeRelay.ManagementAction.PING, command.action);
+
+        command = ShortCodeRelay.parseManagementCommand("test");
+        assertEquals(ShortCodeRelay.ManagementAction.PING, command.action);
+
         assertNull(ShortCodeRelay.parseManagementCommand("[711711] SAVE"));
         assertNull(ShortCodeRelay.parseManagementCommand("Hello there"));
     }
