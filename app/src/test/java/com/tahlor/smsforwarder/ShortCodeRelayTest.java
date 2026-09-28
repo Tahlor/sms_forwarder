@@ -122,6 +122,45 @@ public class ShortCodeRelayTest {
         assertFalse(ShortCodeRelay.sameAddress("+18015551212", "+18015559999"));
     }
 
+
+    @Test
+    public void parsesRemoteManagementCommandsWithoutConfusingRelayCommands() {
+        ShortCodeRelay.ManagementCommand command =
+                ShortCodeRelay.parseManagementCommand("ALLOW 711711");
+        assertEquals(ShortCodeRelay.ManagementAction.ALLOW, command.action);
+        assertEquals("711711", command.argument);
+
+        command = ShortCodeRelay.parseManagementCommand("CMD AUTH SELECTED");
+        assertEquals(ShortCodeRelay.ManagementAction.AUTH, command.action);
+        assertEquals("SELECTED", command.argument);
+
+        command = ShortCodeRelay.parseManagementCommand("MODE CODES");
+        assertEquals(ShortCodeRelay.ManagementAction.MODE, command.action);
+        assertEquals("CODES", command.argument);
+
+        command = ShortCodeRelay.parseManagementCommand("PREFER CREDITKARMA");
+        assertEquals(ShortCodeRelay.ManagementAction.PREFER, command.action);
+        assertEquals("CREDITKARMA", command.argument);
+
+        command = ShortCodeRelay.parseManagementCommand("UNPREFER CREDITKARMA");
+        assertEquals(ShortCodeRelay.ManagementAction.UNPREFER, command.action);
+
+        command = ShortCodeRelay.parseManagementCommand("BLOCK 12345");
+        assertEquals(ShortCodeRelay.ManagementAction.BLOCK, command.action);
+
+        command = ShortCodeRelay.parseManagementCommand("LIST");
+        assertEquals(ShortCodeRelay.ManagementAction.LIST, command.action);
+
+        command = ShortCodeRelay.parseManagementCommand("STATUS");
+        assertEquals(ShortCodeRelay.ManagementAction.STATUS, command.action);
+
+        command = ShortCodeRelay.parseManagementCommand("HELP");
+        assertEquals(ShortCodeRelay.ManagementAction.HELP, command.action);
+
+        assertNull(ShortCodeRelay.parseManagementCommand("[711711] SAVE"));
+        assertNull(ShortCodeRelay.parseManagementCommand("Hello there"));
+    }
+
     @Test
     public void matchesShortCodeSenderFormatting() {
         assertTrue(ShortCodeRelay.senderIsShortCode("711711", "711711"));

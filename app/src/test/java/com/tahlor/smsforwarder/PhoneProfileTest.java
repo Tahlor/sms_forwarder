@@ -105,6 +105,39 @@ public class PhoneProfileTest {
         assertFalse(profile.permitsIncoming("+15551112222", "hello"));
     }
 
+
+    @Test
+    public void remoteManagementIsOffByDefaultAndCountsAsExplicitCapabilityOnlyWhenEnabled() {
+        PhoneProfile defaultProfile = new PhoneProfile(
+                "+15550000000",
+                PhoneProfile.IncomingAuthorization.NONE,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                PhoneProfile.IncomingPreference.OFF,
+                Collections.emptyList(),
+                false,
+                PhoneProfile.OutgoingMode.OFF,
+                Collections.emptyList(),
+                Collections.emptyList());
+        assertFalse(defaultProfile.allowRemoteCommands);
+        assertFalse(defaultProfile.hasAnyCapabilityEnabled());
+
+        PhoneProfile remoteAdmin = new PhoneProfile(
+                "+15550000000",
+                PhoneProfile.IncomingAuthorization.NONE,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                PhoneProfile.IncomingPreference.OFF,
+                Collections.emptyList(),
+                false,
+                PhoneProfile.OutgoingMode.OFF,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                true);
+        assertTrue(remoteAdmin.allowRemoteCommands);
+        assertTrue(remoteAdmin.hasAnyCapabilityEnabled());
+    }
+
     @Test
     public void outgoingModesAndListsAreSecurityCapabilities() {
         PhoneProfile shortCodes = new PhoneProfile(

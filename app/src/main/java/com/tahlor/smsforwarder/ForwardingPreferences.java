@@ -79,7 +79,8 @@ final class ForwardingPreferences {
                             nullableString(object, "outgoingMode"),
                             object.optBoolean("relayEnabled", false)),
                     readStringList(object.optJSONArray("outgoingAllowList")),
-                    readStringList(object.optJSONArray("outgoingBlockList")));
+                    readStringList(object.optJSONArray("outgoingBlockList")),
+                    object.optBoolean("allowRemoteCommands", false));
         }
 
         String oldMode = nullableString(object, "incomingMode");
@@ -124,7 +125,8 @@ final class ForwardingPreferences {
                         nullableString(object, "outgoingMode"),
                         object.optBoolean("relayEnabled", true)),
                 readStringList(object.optJSONArray("outgoingAllowList")),
-                readStringList(object.optJSONArray("outgoingBlockList")));
+                readStringList(object.optJSONArray("outgoingBlockList")),
+                object.optBoolean("allowRemoteCommands", false));
     }
 
     static void saveProfile(Context context, PhoneProfile profile) {
@@ -175,13 +177,21 @@ final class ForwardingPreferences {
 
     static synchronized void setStatus(Context context, String status) {
         String safeStatus = status == null ? "" : status.trim();
-        SharedPreferences preferences = runtimePrefs(context);
-        SharedPreferences.Editor editor = preferences.edit().putString(KEY_STATUS, safeStatus);
+        runtimePrefs(context).edit().putString(KEY_STATUS, safeStatus).apply();
+        appendActivity(context, safeStatus);
+    }
 
+    static synchronized void logActivity(Context context, String activity) {
+        appendActivity(context, activity == null ? "" : activity.trim());
+    }
+
+    private static void appendActivity(Context context, String activity) {
+        if (activity.isEmpty()) return;
+        SharedPreferences preferences = runtimePrefs(context);
         JSONArray next = new JSONArray();
         String timestamp = DateFormat.getMediumDateFormat(context).format(new Date())
                 + " " + DateFormat.getTimeFormat(context).format(new Date());
-        next.put(timestamp + " — " + safeStatus);
+        next.put(timestamp + " — " + activity);
 
         String encoded = preferences.getString(KEY_ACTIVITY, "[]");
         try {
@@ -191,7 +201,7 @@ final class ForwardingPreferences {
                 if (!item.isEmpty()) next.put(item);
             }
         } catch (JSONException ignored) {}
-        editor.putString(KEY_ACTIVITY, next.toString()).apply();
+        preferences.edit().putString(KEY_ACTIVITY, next.toString()).apply();
     }
 
     static List<String> recentActivity(Context context) {
@@ -205,6 +215,149 @@ final class ForwardingPreferences {
             }
         } catch (JSONException ignored) {}
         return result;
+    }
+
+    static PhoneProfile addIncomingAuthorizedSender(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            ArrayList<String> authorized = new ArrayList<>(profile.incomingAuthorizedSenders);
+            removeEquivalent(authorized, cleanTarget);
+            authorized.add(cleanTarget);
+
+            ArrayList<String> blocked = new ArrayList<>(profile.incomingBlockedSenders);
+            removeEquivalent(blocked, cleanTarget);
+
+            PhoneProfile.IncomingAuthorization authorization =
+                    profile.incomingAuthorization == PhoneProfile.IncomingAuthorization.NONE
+                            ? PhoneProfile.IncomingAuthorization.SELECTED
+                            : profile.incomingAuthorization;
+
+            return profile
+                    .withIncomingAuthorization(authorization)
+                    .withIncomingAuthorizedSenders(authorized)
+                    .withIncomingBlockedSenders(blocked);
+        });
+    }
+
+    static PhoneProfile removeIncomingAuthorizedSender(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            ArrayList<String> authorized = new ArrayList<>(profile.incomingAuthorizedSenders);
+            removeEquivalent(authorized, cleanTarget);
+            ArrayList<String> preferred = new ArrayList<>(profile.incomingPreferredSenders);
+            removeEquivalent(preferred, cleanTarget);
+            return profile
+                    .withIncomingAuthorizedSenders(authorized)
+                    .withIncomingPreferredSenders(preferred);
+        });
+    }
+
+    static PhoneProfile addIncomingBlock(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            ArrayList<String> blocked = new ArrayList<>(profile.incomingBlockedSenders);
+            removeEquivalent(blocked, cleanTarget);
+            blocked.add(cleanTarget);
+
+            ArrayList<String> authorized = new ArrayList<>(profile.incomingAuthorizedSenders);
+            removeEquivalent(authorized, cleanTarget);
+            ArrayList<String> preferred = new ArrayList<>(profile.incomingPreferredSenders);
+            removeEquivalent(preferred, cleanTarget);
+
+            return profile
+                    .withIncomingBlockedSenders(blocked)
+                    .withIncomingAuthorizedSenders(authorized)
+                    .withIncomingPreferredSenders(preferred);
+        });
+    }
+
+    static PhoneProfile removeIncomingBlock(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            ArrayList<String> blocked = new ArrayList<>(profile.incomingBlockedSenders);
+            removeEquivalent(blocked, cleanTarget);
+            return profile.withIncomingBlockedSenders(blocked);
+        });
+    }
+
+    static PhoneProfile addIncomingPreferredSender(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            if (!profile.permitsIncomingAuthorization(cleanTarget)) return profile;
+            ArrayList<String> preferred = new ArrayList<>(profile.incomingPreferredSenders);
+            removeEquivalent(preferred, cleanTarget);
+            preferred.add(cleanTarget);
+            return profile.withIncomingPreferredSenders(preferred);
+        });
+    }
+
+    static PhoneProfile removeIncomingPreferredSender(
+            Context context, String controllerNumber, String target) {
+        String cleanTarget = safe(target);
+        if (cleanTarget.isEmpty()) return null;
+        return updateProfile(context, controllerNumber, profile -> {
+            ArrayList<String> preferred = new ArrayList<>(profile.incomingPreferredSenders);
+            removeEquivalent(preferred, cleanTarget);
+            return profile.withIncomingPreferredSenders(preferred);
+        });
+    }
+
+    static PhoneProfile setIncomingAuthorization(
+            Context context, String controllerNumber,
+            PhoneProfile.IncomingAuthorization authorization) {
+        if (authorization == null) return null;
+        return updateProfile(
+                context, controllerNumber,
+                profile -> profile.withIncomingAuthorization(authorization));
+    }
+
+    static PhoneProfile setIncomingPreference(
+            Context context, String controllerNumber,
+            PhoneProfile.IncomingPreference preference) {
+        if (preference == null) return null;
+        return updateProfile(
+                context, controllerNumber,
+                profile -> profile.withIncomingPreference(preference));
+    }
+
+    private interface ProfileUpdater {
+        PhoneProfile update(PhoneProfile profile);
+    }
+
+    private static PhoneProfile updateProfile(
+            Context context, String controllerNumber,
+            ProfileUpdater updater) {
+        List<PhoneProfile> current = profiles(context);
+        List<PhoneProfile> updatedList = new ArrayList<>();
+        PhoneProfile updatedProfile = null;
+        boolean replaced = false;
+        for (PhoneProfile profile : current) {
+            if (!replaced && ShortCodeRelay.sameAddress(profile.number, controllerNumber)) {
+                updatedProfile = updater.update(profile);
+                updatedList.add(updatedProfile);
+                replaced = true;
+            } else {
+                updatedList.add(profile);
+            }
+        }
+        if (updatedProfile != null) saveProfiles(context, updatedList);
+        return updatedProfile;
+    }
+
+    private static void removeEquivalent(List<String> values, String target) {
+        for (int i = values.size() - 1; i >= 0; i--) {
+            if (PhoneProfile.addressesMatch(values.get(i), target)) values.remove(i);
+        }
     }
 
     static void startReplyRelay(Context context, String controllerNumber, String destination,
@@ -276,7 +429,8 @@ final class ForwardingPreferences {
                     destinationControlsRelay ? PhoneProfile.OutgoingMode.SHORT_CODES
                             : PhoneProfile.OutgoingMode.OFF,
                     Collections.emptyList(),
-                    Collections.emptyList()));
+                    Collections.emptyList(),
+                    false));
         }
 
         if (relayEnabled && !controller.isEmpty()
@@ -291,7 +445,8 @@ final class ForwardingPreferences {
                     false,
                     PhoneProfile.OutgoingMode.SHORT_CODES,
                     Collections.emptyList(),
-                    Collections.emptyList()));
+                    Collections.emptyList(),
+                    false));
         }
 
         preferences.edit()
@@ -314,7 +469,7 @@ final class ForwardingPreferences {
             if (profile == null || profile.number.isEmpty()) continue;
             JSONObject object = new JSONObject();
             try {
-                object.put("modelVersion", 2);
+                object.put("modelVersion", 3);
                 object.put("number", profile.number);
                 object.put("incomingAuthorization", profile.incomingAuthorization.name());
                 object.put("incomingAuthorizedSenders",
@@ -328,6 +483,7 @@ final class ForwardingPreferences {
                 object.put("outgoingMode", profile.outgoingMode.name());
                 object.put("outgoingAllowList", toJsonArray(profile.outgoingAllowList));
                 object.put("outgoingBlockList", toJsonArray(profile.outgoingBlockList));
+                object.put("allowRemoteCommands", profile.allowRemoteCommands);
                 array.put(object);
             } catch (JSONException ignored) {}
         }

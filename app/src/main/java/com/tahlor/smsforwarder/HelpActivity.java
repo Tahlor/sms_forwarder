@@ -77,7 +77,7 @@ public final class HelpActivity extends Activity {
                 "Selected authorized senders — forward only the preferred sender list, and only if those senders are also authorized.");
 
         addSection(content, "Security-code behavior",
-                "A security-code message currently means a body containing a run of 6 or more consecutive digits, using the pattern [0-9]{6,}. When “Send detected code separately for easy copying” is enabled, the full authorized message is forwarded and the first matching digit run is also sent as a second SMS by itself.");
+                "Security-code mode recognizes common verification messages: 4–8 digit codes when the message contains authentication language such as code, verification, OTP, PIN, login, security, or do-not-share wording; formatted codes such as 123-456 or 123 456; prefixed codes such as G-123456; and, for backward compatibility, any run of 6 or more consecutive digits. When “Send detected code separately for easy copying” is enabled, the full authorized message is forwarded and the detected code is also sent as a second SMS by itself.");
 
         addSection(content, "Outgoing relay authorization",
                 "This is a security capability granted to the downstream phone. It is independent of automatic incoming forwarding.");
@@ -88,6 +88,23 @@ public final class HelpActivity extends Activity {
                 "Any number — any normalized 3–15 digit destination is permitted unless blocked.",
                 "Blocked destinations always win.");
 
+        addSection(content, "Remote management by SMS",
+                "Remote management is a separate powerful capability and is OFF by default. Enable it only for a phone you fully trust. A remotely managed phone can change its own incoming security authorization and automatic-forwarding rules. Commands may optionally start with CMD.");
+        addCode(content, "AUTH ANY");
+        addBody(content, "Set hard incoming security authorization to any sender. AUTH SELECTED and AUTH OFF are also supported.");
+        addCode(content, "ALLOW 711711");
+        addBody(content, "Add a sender to the selected authorization list. If incoming authorization was Off, ALLOW switches it to Selected. UNALLOW removes the list entry.");
+        addCode(content, "BLOCK 711711");
+        addBody(content, "Hard-block a sender. UNBLOCK removes the block. A block always wins over authorization and forwarding preferences.");
+        addCode(content, "MODE CODES");
+        addBody(content, "Set automatic forwarding to Security codes only. MODE ALL, MODE SELECTED, and MODE OFF are also supported; MODE never expands the hard security authorization.");
+        addCode(content, "PREFER 711711");
+        addBody(content, "Add an already-authorized sender to the Selected automatic-forward list. UNPREFER removes it.");
+        addCode(content, "LIST");
+        addBody(content, "Return the phone's current authorization, block list, automatic-forwarding mode, preferred list, outgoing authorization, and remote-management state.");
+        addCode(content, "STATUS");
+        addBody(content, "Return the app's most recent routing/status message. HELP returns the command cheat sheet.");
+
         addSection(content, "Why security and forwarding are separate",
                 "A fully trusted second phone can be authorized for messages from any sender while automatically receiving only security codes. A less-trusted phone can be authorized for only a few senders; choosing a broader automatic-forwarding preference still cannot expand that authorization.");
 
@@ -95,7 +112,7 @@ public final class HelpActivity extends Activity {
                 "The app requests RECEIVE_SMS and SEND_SMS only. It does not request READ_SMS and does not have Internet permission. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions.");
 
         addSection(content, "Privacy and diagnostics",
-                "Message bodies and verification codes are not stored in the diagnostic history. The app keeps only a small local runtime activity log with routing/result descriptions and addressing metadata so you can distinguish: SMS never reached the app, SMS reached the app but rules rejected it, send was queued, or Android reported a send failure. The runtime log is not included in Android backup.");
+                "Message bodies and verification codes are not stored in the diagnostic history. The app keeps only a small local runtime activity log with routing/result descriptions and addressing metadata so you can distinguish: SMS never reached the app, SMS reached the app but rules rejected it, send was queued, or Android reported a send failure. Remote-management commands are recorded only as rule/result descriptions, not message bodies. The runtime log is not included in Android backup.");
 
         addSection(content, "If nothing happened",
                 "Open this Help page and check Current setup and Recent activity. For an incoming SMS, you should see an “Incoming SMS received” event if Android delivered the broadcast to the app. For a bracket command, you should see whether it was blocked, queued, sent, or failed. If no receive event appears at all, investigate Android SMS permission/restricted-settings or device delivery rather than the forwarding filter.");

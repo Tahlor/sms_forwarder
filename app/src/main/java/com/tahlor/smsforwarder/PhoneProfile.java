@@ -62,6 +62,7 @@ final class PhoneProfile {
     final OutgoingMode outgoingMode;
     final List<String> outgoingAllowList;
     final List<String> outgoingBlockList;
+    final boolean allowRemoteCommands;
 
     PhoneProfile(String number,
                  IncomingAuthorization incomingAuthorization,
@@ -72,7 +73,8 @@ final class PhoneProfile {
                  boolean codeCopyFollowup,
                  OutgoingMode outgoingMode,
                  List<String> outgoingAllowList,
-                 List<String> outgoingBlockList) {
+                 List<String> outgoingBlockList,
+                 boolean allowRemoteCommands) {
         this.number = number == null ? "" : number.trim();
         this.incomingAuthorization = incomingAuthorization == null
                 ? IncomingAuthorization.NONE : incomingAuthorization;
@@ -85,6 +87,22 @@ final class PhoneProfile {
         this.outgoingMode = outgoingMode == null ? OutgoingMode.OFF : outgoingMode;
         this.outgoingAllowList = cleanList(outgoingAllowList);
         this.outgoingBlockList = cleanList(outgoingBlockList);
+        this.allowRemoteCommands = allowRemoteCommands;
+    }
+
+    PhoneProfile(String number,
+                 IncomingAuthorization incomingAuthorization,
+                 List<String> incomingAuthorizedSenders,
+                 List<String> incomingBlockedSenders,
+                 IncomingPreference incomingPreference,
+                 List<String> incomingPreferredSenders,
+                 boolean codeCopyFollowup,
+                 OutgoingMode outgoingMode,
+                 List<String> outgoingAllowList,
+                 List<String> outgoingBlockList) {
+        this(number, incomingAuthorization, incomingAuthorizedSenders, incomingBlockedSenders,
+                incomingPreference, incomingPreferredSenders, codeCopyFollowup, outgoingMode,
+                outgoingAllowList, outgoingBlockList, false);
     }
 
     // Compatibility constructor retained for legacy migration/tests.
@@ -102,12 +120,50 @@ final class PhoneProfile {
                 codeCopyFollowup,
                 relayEnabled ? OutgoingMode.SHORT_CODES : OutgoingMode.OFF,
                 Collections.emptyList(),
-                Collections.emptyList());
+                Collections.emptyList(),
+                false);
+    }
+
+    PhoneProfile withIncomingAuthorization(IncomingAuthorization value) {
+        return new PhoneProfile(number, value, incomingAuthorizedSenders, incomingBlockedSenders,
+                incomingPreference, incomingPreferredSenders, codeCopyFollowup, outgoingMode,
+                outgoingAllowList, outgoingBlockList, allowRemoteCommands);
+    }
+
+    PhoneProfile withIncomingAuthorizedSenders(List<String> value) {
+        return new PhoneProfile(number, incomingAuthorization, value, incomingBlockedSenders,
+                incomingPreference, incomingPreferredSenders, codeCopyFollowup, outgoingMode,
+                outgoingAllowList, outgoingBlockList, allowRemoteCommands);
+    }
+
+    PhoneProfile withIncomingBlockedSenders(List<String> value) {
+        return new PhoneProfile(number, incomingAuthorization, incomingAuthorizedSenders, value,
+                incomingPreference, incomingPreferredSenders, codeCopyFollowup, outgoingMode,
+                outgoingAllowList, outgoingBlockList, allowRemoteCommands);
+    }
+
+    PhoneProfile withIncomingPreference(IncomingPreference value) {
+        return new PhoneProfile(number, incomingAuthorization, incomingAuthorizedSenders,
+                incomingBlockedSenders, value, incomingPreferredSenders, codeCopyFollowup,
+                outgoingMode, outgoingAllowList, outgoingBlockList, allowRemoteCommands);
+    }
+
+    PhoneProfile withIncomingPreferredSenders(List<String> value) {
+        return new PhoneProfile(number, incomingAuthorization, incomingAuthorizedSenders,
+                incomingBlockedSenders, incomingPreference, value, codeCopyFollowup, outgoingMode,
+                outgoingAllowList, outgoingBlockList, allowRemoteCommands);
+    }
+
+    PhoneProfile withRemoteCommands(boolean value) {
+        return new PhoneProfile(number, incomingAuthorization, incomingAuthorizedSenders,
+                incomingBlockedSenders, incomingPreference, incomingPreferredSenders,
+                codeCopyFollowup, outgoingMode, outgoingAllowList, outgoingBlockList, value);
     }
 
     boolean hasAnyCapabilityEnabled() {
         return incomingAuthorization != IncomingAuthorization.NONE
-                || outgoingMode != OutgoingMode.OFF;
+                || outgoingMode != OutgoingMode.OFF
+                || allowRemoteCommands;
     }
 
     boolean permitsIncomingAuthorization(String sender) {
@@ -144,10 +200,12 @@ final class PhoneProfile {
     }
 
     String summary() {
-        return number
+        String summary = number
                 + " — incoming authorization: " + authorizationLabel()
                 + "; automatic forwarding: " + preferenceLabel()
                 + "; outgoing authorization: " + outgoingLabel();
+        if (allowRemoteCommands) summary += "; remote management enabled";
+        return summary;
     }
 
     String authorizationLabel() {
@@ -176,6 +234,14 @@ final class PhoneProfile {
         }
     }
 
+    static boolean addressesMatch(String first, String second) {
+        String a = first == null ? "" : first.trim();
+        String b = second == null ? "" : second.trim();
+        if (a.isEmpty() || b.isEmpty()) return false;
+        if (isNumericAddress(a) && isNumericAddress(b)) return ShortCodeRelay.sameAddress(a, b);
+        return a.equalsIgnoreCase(b);
+    }
+
     private static List<String> cleanList(List<String> values) {
         if (values == null || values.isEmpty()) return Collections.emptyList();
         ArrayList<String> result = new ArrayList<>();
@@ -199,14 +265,6 @@ final class PhoneProfile {
             if (addressesMatch(address, rule)) return true;
         }
         return false;
-    }
-
-    private static boolean addressesMatch(String first, String second) {
-        String a = first == null ? "" : first.trim();
-        String b = second == null ? "" : second.trim();
-        if (a.isEmpty() || b.isEmpty()) return false;
-        if (isNumericAddress(a) && isNumericAddress(b)) return ShortCodeRelay.sameAddress(a, b);
-        return a.equalsIgnoreCase(b);
     }
 
     private static boolean isNumericAddress(String value) {

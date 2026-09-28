@@ -2,7 +2,7 @@
 
 A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-Version **0.2.0 / versionCode 12** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
+Version **0.2.1 / versionCode 13** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
 ## Security model
 
@@ -42,13 +42,13 @@ A new phone defaults to **No incoming access** and **No outgoing access**. Broad
 
 ### Security-code detection
 
-Security-code mode currently matches a run of 6 or more consecutive ASCII digits:
+Security-code mode recognizes common verification messages using two paths:
 
-```text
-[0-9]{6,}
-```
+- authentication language such as `code`, `verification`, `OTP`, `PIN`, `login`, `security`, or do-not-share wording together with a 4–8 digit token;
+- formatted codes such as `123-456` or `123 456`, including prefixed forms such as `G-123456`;
+- for backward compatibility, any run of 6 or more consecutive digits still qualifies.
 
-If **Send detected code separately for easy copying** is enabled, the app forwards the full authorized message and also sends the first matching digit run as a second SMS.
+If **Send detected code separately for easy copying** is enabled, the app forwards the full authorized message and also sends the detected code as a second SMS with separators removed.
 
 ### Outgoing relay authorization
 
@@ -100,6 +100,58 @@ or a failure acknowledgement.
 
 Blocked commands are also acknowledged when SEND_SMS permission is available.
 
+## Remote management by SMS
+
+Remote management is a separate per-phone security capability and is **off by default**. Enable it only for a downstream phone you fully trust. When enabled, that phone can change its own incoming security and automatic-forwarding rules by texting the host phone.
+
+Commands may optionally begin with `CMD `.
+
+```text
+AUTH ANY
+AUTH SELECTED
+AUTH OFF
+```
+
+Changes the hard incoming security authorization.
+
+```text
+ALLOW 711711
+UNALLOW 711711
+```
+
+Adds/removes a sender from the selected authorization list. If authorization is Off, `ALLOW` switches it to Selected.
+
+```text
+BLOCK 711711
+UNBLOCK 711711
+```
+
+Adds/removes a hard block. Blocks always win.
+
+```text
+MODE CODES
+MODE ALL
+MODE SELECTED
+MODE OFF
+```
+
+Changes automatic forwarding only. It never expands the hard security authorization.
+
+```text
+PREFER 711711
+UNPREFER 711711
+```
+
+Changes the sender list used by `MODE SELECTED`. A sender must already be inside the hard authorization and not blocked.
+
+```text
+LIST
+STATUS
+HELP
+```
+
+Returns the current rules, last routing status, or command cheat sheet.
+
 ## Reply window
 
 After a relay is reported successfully sent, the app keeps a 5-minute return route for that downstream phone. An explicit empty command opens the same window immediately.
@@ -123,7 +175,8 @@ Every phone has independent:
 - code-only copy preference;
 - outgoing relay authorization;
 - outgoing allow/block lists;
-- temporary reply window.
+- temporary reply window;
+- opt-in remote-management capability.
 
 Editing a phone number replaces its original profile rather than leaving a duplicate.
 
@@ -139,7 +192,8 @@ The **Help** page is the canonical command/behavior reference. It includes:
 - 5-minute reply behavior;
 - sideloaded permission instructions;
 - troubleshooting;
-- recent runtime activity.
+- recent runtime activity;
+- remote-management command reference and security implications.
 
 The runtime activity log is intentionally privacy-limited. It stores routing/result descriptions and addressing metadata only. It does **not** persist message bodies or verification codes, and it is stored outside the backed-up preferences file.
 
@@ -188,7 +242,8 @@ Existing profiles are migrated conservatively without widening their old behavio
 - old **Selected senders only** → authorization **Selected senders** using the old allow list + preference **All authorized messages**;
 - old **Nothing** → no incoming authorization + forwarding off;
 - existing incoming block lists remain hard blocks;
-- existing outgoing modes and allow/block lists retain their meaning.
+- existing outgoing modes and allow/block lists retain their meaning;
+- remote management defaults to **off** for migrated profiles unless explicitly enabled in a newer saved profile.
 
 The next save writes the new model. Profile preferences participate in Android backup/restore. Runtime status, diagnostic activity, delivery tracking, and active reply sessions do not.
 
@@ -202,7 +257,8 @@ The next save writes the new model. Profile preferences participate in Android b
 - Relay commands execute only for a sender matching a configured downstream phone.
 - Incoming delivery is authorization ∩ preference.
 - Incoming and outgoing block lists take precedence over allows/preferences.
-- New phones start with no security capabilities granted.
+- New phones start with no incoming, outgoing, or remote-management capability granted.
+- Remote management is opt-in and can change the phone's own incoming security/forwarding rules, so it should be enabled only for a fully trusted downstream phone.
 
 ## Build
 

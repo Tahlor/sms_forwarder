@@ -78,6 +78,7 @@ public final class MainActivity extends Activity {
     private EditText outgoingAllowInput;
     private EditText outgoingBlockInput;
     private CheckBox codeCopyFollowupCheck;
+    private CheckBox allowRemoteCommandsCheck;
     private LinearLayout incomingSecurityRulesContainer;
     private LinearLayout incomingPreferenceRulesContainer;
     private LinearLayout outgoingRulesContainer;
@@ -319,6 +320,21 @@ public final class MainActivity extends Activity {
         outgoingHint.setPadding(0, dp(6), 0, 0);
         editor.addView(outgoingHint);
 
+        TextView remoteHeading = heading("Remote management", 17);
+        remoteHeading.setPadding(0, dp(18), 0, dp(2));
+        editor.addView(remoteHeading);
+        allowRemoteCommandsCheck = new CheckBox(this);
+        allowRemoteCommandsCheck.setText("Allow this phone to change its rules by SMS");
+        allowRemoteCommandsCheck.setTextColor(palette.text);
+        allowRemoteCommandsCheck.setTextSize(15);
+        editor.addView(allowRemoteCommandsCheck);
+        TextView remoteHint = body(
+                "Powerful capability: this phone can change its incoming security authorization "
+                        + "and automatic-forwarding rules. Leave off unless you fully trust it.");
+        remoteHint.setTextSize(13);
+        remoteHint.setPadding(0, dp(1), 0, 0);
+        editor.addView(remoteHint);
+
         advancedRulesLink = link("Advanced rules");
         advancedRulesLink.setPadding(0, dp(16), 0, dp(8));
         advancedRulesLink.setOnClickListener(v -> {
@@ -490,6 +506,7 @@ public final class MainActivity extends Activity {
                 PhoneProfile.IncomingPreference.OFF.ordinal());
         outgoingModeSpinner.setSelection(PhoneProfile.OutgoingMode.OFF.ordinal());
         codeCopyFollowupCheck.setChecked(true);
+        allowRemoteCommandsCheck.setChecked(false);
         incomingAuthorizedInput.setText("");
         incomingBlockedInput.setText("");
         incomingPreferredInput.setText("");
@@ -511,6 +528,7 @@ public final class MainActivity extends Activity {
         incomingPreferenceSpinner.setSelection(profile.incomingPreference.ordinal());
         outgoingModeSpinner.setSelection(profile.outgoingMode.ordinal());
         codeCopyFollowupCheck.setChecked(profile.codeCopyFollowup);
+        allowRemoteCommandsCheck.setChecked(profile.allowRemoteCommands);
         incomingAuthorizedInput.setText(joinList(profile.incomingAuthorizedSenders));
         incomingBlockedInput.setText(joinList(profile.incomingBlockedSenders));
         incomingPreferredInput.setText(joinList(profile.incomingPreferredSenders));
@@ -627,7 +645,8 @@ public final class MainActivity extends Activity {
                 codeCopyFollowupCheck.isChecked(),
                 outgoingMode,
                 outgoingAllow,
-                outgoingBlock);
+                outgoingBlock,
+                allowRemoteCommandsCheck.isChecked());
         if (!profile.hasAnyCapabilityEnabled()) {
             Toast.makeText(this,
                     "Grant at least one incoming or outgoing capability, or cancel this phone.",
@@ -697,9 +716,11 @@ public final class MainActivity extends Activity {
     }
 
     private String compactSummary(PhoneProfile profile) {
-        return "Allowed: " + profile.authorizationLabel()
+        String summary = "Allowed: " + profile.authorizationLabel()
                 + "  •  Auto: " + profile.preferenceLabel()
                 + "  •  Sends: " + profile.outgoingLabel();
+        if (profile.allowRemoteCommands) summary += "  •  Remote admin";
+        return summary;
     }
 
     private void confirmRemoveNumber(String number) {

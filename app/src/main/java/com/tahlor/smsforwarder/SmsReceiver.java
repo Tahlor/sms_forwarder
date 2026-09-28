@@ -51,7 +51,7 @@ public final class SmsReceiver extends BroadcastReceiver {
             String sender = entry.getKey();
             String body = entry.getValue().toString();
             String displaySender = ShortCodeRelay.formatSenderForDisplay(sender);
-            ForwardingPreferences.setStatus(context,
+            ForwardingPreferences.logActivity(context,
                     "Incoming SMS received from " + displaySender + "; evaluating rules.");
 
             if (body.startsWith(FORWARD_PREFIX)) {
@@ -133,6 +133,12 @@ public final class SmsReceiver extends BroadcastReceiver {
         PhoneProfile controller = ShortCodeRelay.findRegisteredProfile(profiles, sender);
         if (controller == null) return false;
 
+        ShortCodeRelay.ManagementCommand management =
+                ShortCodeRelay.parseManagementCommand(body);
+        if (management != null) {
+            return handleManagementCommand(context, controller, management);
+        }
+
         ShortCodeRelay.Command command = ShortCodeRelay.parseCommand(body);
         if (command == null) return false;
 
@@ -192,6 +198,282 @@ public final class SmsReceiver extends BroadcastReceiver {
                     "Failed to queue the send to " + displayDestination + ".");
         }
         return true;
+    }
+
+    private static boolean handleManagementCommand(
+            Context context, PhoneProfile controller,
+            ShortCodeRelay.ManagementCommand command) {
+        if (!controller.allowRemoteCommands) {
+            ForwardingPreferences.setStatus(context,
+                    "Blocked remote-management command from " + controller.number
+                            + " because that capability is disabled.");
+            if (hasSendPermission(context)) {
+                sendManagementReply(context, controller.number,
+                        "Remote management is disabled for this phone. Enable it on the host phone first.");
+            }
+            return true;
+        }
+
+        if (!hasSendPermission(context)) {
+            ForwardingPreferences.setStatus(context,
+                    "Remote-management command received from " + controller.number
+                            + ", but Send SMS access is missing.");
+            return true;
+        }
+
+        switch (command.action) {
+            case HELP:
+                sendManagementReply(context, controller.number,
+                        "Commands:\n"
+                                + "AUTH <ANY|SELECTED|OFF> - hard incoming authorization\n"
+                                + "ALLOW <sender> - add to selected authorization\n"
+                                + "UNALLOW <sender> - remove authorization entry\n"
+                                + "BLOCK/UNBLOCK <sender> - hard deny/remove deny\n"
+                                + "MODE <CODES|ALL|SELECTED|OFF> - automatic forwarding\n"
+                                + "PREFER/UNPREFER <sender> - selected auto-forward list\n"
+                                + "LIST - show rules\n"
+                                + "STATUS - show last status\n"
+                                + "[destination] message - relay an SMS");
+                ForwardingPreferences.setStatus(context,
+                        "Sent remote-management help to " + controller.number + ".");
+                return true;
+
+            case STATUS:
+                sendManagementReply(context, controller.number,
+                        "Last status: " + ForwardingPreferences.status(context));
+                return true;
+
+            case LIST: {
+                PhoneProfile current = currentProfile(context, controller);
+                String reply = "Rules:\n"
+                        + "Incoming auth: " + current.authorizationLabel() + "\n"
+                        + "Authorized list: " + formatList(current.incomingAuthorizedSenders) + "\n"
+                        + "Blocked: " + formatList(current.incomingBlockedSenders) + "\n"
+                        + "Auto-forward: " + current.preferenceLabel() + "\n"
+                        + "Preferred list: " + formatList(current.incomingPreferredSenders) + "\n"
+                        + "Outgoing auth: " + current.outgoingLabel() + "\n"
+                        + "Remote management: enabled";
+                sendManagementReply(context, controller.number, reply);
+                ForwardingPreferences.setStatus(context,
+                        "Sent active rules to " + controller.number + ".");
+                return true;
+            }
+
+            case ALLOW: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "ALLOW <sender>")) return true;
+                PhoneProfile updated = ForwardingPreferences.addIncomingAuthorizedSender(
+                        context, controller.number, command.argument);
+                if (updated == null) {
+                    sendManagementReply(context, controller.number,
+                            "Could not update the authorization list.");
+                    return true;
+                }
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Authorized " + display + ". This changes the hard security scope; "
+                                + "automatic forwarding still follows MODE.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management authorized " + display + " for "
+                                + controller.number + ".");
+                return true;
+            }
+
+            case UNALLOW: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "UNALLOW <sender>")) return true;
+                ForwardingPreferences.removeIncomingAuthorizedSender(
+                        context, controller.number, command.argument);
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Removed " + display + " from the selected authorization list.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management removed incoming authorization for " + display
+                                + " on " + controller.number + ".");
+                return true;
+            }
+
+            case BLOCK: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "BLOCK <sender>")) return true;
+                ForwardingPreferences.addIncomingBlock(
+                        context, controller.number, command.argument);
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Blocked " + display + ". Block always wins.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management blocked " + display + " for "
+                                + controller.number + ".");
+                return true;
+            }
+
+            case UNBLOCK: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "UNBLOCK <sender>")) return true;
+                ForwardingPreferences.removeIncomingBlock(
+                        context, controller.number, command.argument);
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Removed the hard block for " + display + ".");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management unblocked " + display + " for "
+                                + controller.number + ".");
+                return true;
+            }
+
+            case AUTH: {
+                PhoneProfile.IncomingAuthorization authorization =
+                        parseAuthorization(command.argument);
+                if (authorization == null) {
+                    sendManagementReply(context, controller.number,
+                            "Usage: AUTH <ANY|SELECTED|OFF>");
+                    return true;
+                }
+                ForwardingPreferences.setIncomingAuthorization(
+                        context, controller.number, authorization);
+                sendManagementReply(context, controller.number,
+                        "Incoming security authorization set to "
+                                + authorizationLabel(authorization) + ".");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management changed incoming authorization for "
+                                + controller.number + " to "
+                                + authorizationLabel(authorization) + ".");
+                return true;
+            }
+
+            case MODE: {
+                PhoneProfile.IncomingPreference preference =
+                        parsePreference(command.argument);
+                if (preference == null) {
+                    sendManagementReply(context, controller.number,
+                            "Usage: MODE <CODES|ALL|SELECTED|OFF>");
+                    return true;
+                }
+                ForwardingPreferences.setIncomingPreference(
+                        context, controller.number, preference);
+                sendManagementReply(context, controller.number,
+                        "Automatic forwarding set to " + preferenceLabel(preference)
+                                + ". It cannot exceed the security authorization.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management changed automatic forwarding for "
+                                + controller.number + " to " + preferenceLabel(preference) + ".");
+                return true;
+            }
+
+            case PREFER: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "PREFER <sender>")) return true;
+                PhoneProfile current = currentProfile(context, controller);
+                if (!current.permitsIncomingAuthorization(command.argument)) {
+                    sendManagementReply(context, controller.number,
+                            "Not added: that sender is outside the current security authorization "
+                                    + "or is blocked. Authorize it first.");
+                    return true;
+                }
+                ForwardingPreferences.addIncomingPreferredSender(
+                        context, controller.number, command.argument);
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Added " + display + " to the selected automatic-forward list.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management preferred " + display + " for "
+                                + controller.number + ".");
+                return true;
+            }
+
+            case UNPREFER: {
+                if (!requireArgument(context, controller.number, command.argument,
+                        "UNPREFER <sender>")) return true;
+                ForwardingPreferences.removeIncomingPreferredSender(
+                        context, controller.number, command.argument);
+                String display = ShortCodeRelay.formatSenderForDisplay(command.argument);
+                sendManagementReply(context, controller.number,
+                        "Removed " + display + " from the selected automatic-forward list.");
+                ForwardingPreferences.setStatus(context,
+                        "Remote management removed preferred sender " + display + " for "
+                                + controller.number + ".");
+                return true;
+            }
+        }
+        return true;
+    }
+
+    private static boolean requireArgument(
+            Context context, String controller, String argument, String usage) {
+        if (argument != null && !argument.trim().isEmpty()) return true;
+        sendManagementReply(context, controller, "Usage: " + usage);
+        return false;
+    }
+
+    private static PhoneProfile currentProfile(Context context, PhoneProfile fallback) {
+        PhoneProfile current = ShortCodeRelay.findRegisteredProfile(
+                ForwardingPreferences.profiles(context), fallback.number);
+        return current == null ? fallback : current;
+    }
+
+    private static PhoneProfile.IncomingAuthorization parseAuthorization(String argument) {
+        String value = argument == null ? "" : argument.trim().toUpperCase();
+        if (value.equals("ANY") || value.equals("ALL")) {
+            return PhoneProfile.IncomingAuthorization.ANY;
+        }
+        if (value.equals("SELECTED") || value.equals("LIST")) {
+            return PhoneProfile.IncomingAuthorization.SELECTED;
+        }
+        if (value.equals("OFF") || value.equals("NONE")) {
+            return PhoneProfile.IncomingAuthorization.NONE;
+        }
+        return null;
+    }
+
+    private static PhoneProfile.IncomingPreference parsePreference(String argument) {
+        String value = argument == null ? "" : argument.trim().toUpperCase();
+        if (value.startsWith("CODE")) return PhoneProfile.IncomingPreference.SECURITY_CODES;
+        if (value.equals("ALL")) return PhoneProfile.IncomingPreference.ALL_AUTHORIZED;
+        if (value.equals("SELECTED") || value.equals("LIST")) {
+            return PhoneProfile.IncomingPreference.SELECTED;
+        }
+        if (value.equals("OFF") || value.equals("NONE")) {
+            return PhoneProfile.IncomingPreference.OFF;
+        }
+        return null;
+    }
+
+    private static String authorizationLabel(PhoneProfile.IncomingAuthorization value) {
+        switch (value) {
+            case ANY: return "Any sender";
+            case SELECTED: return "Selected senders";
+            default: return "Off";
+        }
+    }
+
+    private static String preferenceLabel(PhoneProfile.IncomingPreference value) {
+        switch (value) {
+            case ALL_AUTHORIZED: return "All authorized messages";
+            case SECURITY_CODES: return "Security codes only";
+            case SELECTED: return "Selected authorized senders";
+            default: return "Off";
+        }
+    }
+
+    private static String formatList(List<String> items) {
+        if (items == null || items.isEmpty()) return "None";
+        StringBuilder result = new StringBuilder();
+        for (String item : items) {
+            if (result.length() > 0) result.append(", ");
+            result.append(item);
+        }
+        return result.toString();
+    }
+
+    private static void sendManagementReply(Context context, String controller, String message) {
+        if (!hasSendPermission(context) || controller == null || controller.isEmpty()) return;
+        try {
+            sendMessage(SmsManager.getDefault(), controller,
+                    FORWARD_PREFIX + "\n" + message);
+        } catch (RuntimeException e) {
+            ForwardingPreferences.setStatus(context,
+                    "Remote-management result was recorded, but the response SMS could not be sent.");
+        }
     }
 
     private static boolean handleActiveReply(Context context, List<PhoneProfile> profiles,
@@ -302,7 +584,10 @@ public final class SmsReceiver extends BroadcastReceiver {
 
     private static void sendMessage(SmsManager smsManager, String destination, String message) {
         ArrayList<String> parts = smsManager.divideMessage(message);
-        if (parts.size() <= 1) smsManager.sendTextMessage(destination, null, message, null, null);
-        else smsManager.sendMultipartTextMessage(destination, null, parts, null, null);
+        if (parts.size() <= 1) {
+            smsManager.sendTextMessage(destination, null, message, null, null);
+        } else {
+            smsManager.sendMultipartTextMessage(destination, null, parts, null, null);
+        }
     }
 }
