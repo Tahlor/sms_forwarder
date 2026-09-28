@@ -26,6 +26,7 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -69,6 +70,7 @@ public final class MainActivity extends Activity {
     private TextView advancedRulesLink;
     private TextView removeEditingLink;
     private Button authorizeButton;
+    private TextView moreLink;
 
     private EditText numberInput;
     private Spinner incomingModeSpinner;
@@ -90,12 +92,11 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("SMS Forwarder");
-        getWindow().setStatusBarColor(COLOR_BG);
-        getWindow().setNavigationBarColor(COLOR_BG);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
 
         View content = buildContent();
         setContentView(content);
+        SystemBars.configure(this, content, COLOR_BG);
+        registerBackHandler();
         resetProfileEditor();
         refreshProfiles();
         refreshStatus();
@@ -110,6 +111,36 @@ public final class MainActivity extends Activity {
             returningFromAppSettings = false;
             permissionStatus.post(() -> requestSmsPermissions(false));
         }
+    }
+
+    private void registerBackHandler() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    () -> {
+                        if (!handleBackNavigation()) moveTaskToBack(true);
+                    });
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        if (!handleBackNavigation()) super.onBackPressed();
+    }
+
+    private boolean handleBackNavigation() {
+        if (editorContainer != null && editorContainer.getVisibility() == View.VISIBLE) {
+            hideEditor();
+            resetProfileEditor();
+            return true;
+        }
+        if (moreContainer != null && moreContainer.getVisibility() == View.VISIBLE) {
+            moreContainer.setVisibility(View.GONE);
+            if (moreLink != null) moreLink.setText("More");
+            return true;
+        }
+        return false;
     }
 
     private View buildContent() {
@@ -186,7 +217,7 @@ public final class MainActivity extends Activity {
         statusParams.topMargin = dp(14);
         content.addView(forwardingStatus, statusParams);
 
-        TextView moreLink = link("More");
+        moreLink = link("More");
         moreLink.setPadding(0, dp(20), 0, dp(8));
         content.addView(moreLink);
 
@@ -530,6 +561,7 @@ public final class MainActivity extends Activity {
             top.addView(number, weighted());
             TextView edit = link("Edit ›");
             edit.setPadding(dp(12), dp(2), 0, dp(2));
+            edit.setOnClickListener(v -> editProfile(profile));
             top.addView(edit);
             card.addView(top, fullWidth());
 

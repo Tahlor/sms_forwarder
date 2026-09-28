@@ -144,7 +144,7 @@ Canonical release builds use the persistent signer and:
 gradle testDebugUnitTest assembleRelease
 ```
 
-Version: **0.1.7 / versionCode 8**.
+Version: **0.1.10 / versionCode 11**.
 
 ## Automated Archimedes deployment
 

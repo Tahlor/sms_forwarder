@@ -16,7 +16,9 @@ public final class HelpActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("Examples & help");
-        setContentView(buildContent());
+        ScrollView content = buildContent();
+        setContentView(content);
+        SystemBars.configure(this, content, 0xFFFFFFFF);
     }
 
     private ScrollView buildContent() {
