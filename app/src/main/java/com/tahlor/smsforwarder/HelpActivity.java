@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
@@ -73,7 +74,7 @@ public final class HelpActivity extends Activity {
         addBullets(content,
                 "Forward nothing — no automatic incoming forwarding.",
                 "All authorized messages — forward every message that passes the security authorization.",
-                "Security codes only — forward authorized messages containing 6 or more consecutive ASCII digits.",
+                "Security codes only — forward detected code messages plus any explicitly preferred/ALLOW sender, all still inside the hard authorization.",
                 "Selected authorized senders — forward only the preferred sender list, and only if those senders are also authorized.");
 
         addSection(content, "Security-code behavior",
@@ -89,11 +90,13 @@ public final class HelpActivity extends Activity {
                 "Blocked destinations always win.");
 
         addSection(content, "Remote management by SMS",
-                "Remote management is a separate powerful capability and is OFF by default. Enable it only for a phone you fully trust. A remotely managed phone can change its own incoming security authorization and automatic-forwarding rules. Commands may optionally start with CMD.");
+                "Commands must arrive as carrier SMS, not RCS/chat. Remote management is a separate powerful capability and is OFF by default. PING is read-only and works for any configured downstream phone even when remote management is off. Mutating commands require remote management to be explicitly enabled. Commands may optionally start with CMD.");
+        addCode(content, "PING");
+        addBody(content, "End-to-end transport test. If SMS Forwarder receives the SMS, it replies with the phone's current capability summary. If you get no response, verify the message was sent as SMS rather than RCS/chat and check Recent activity.");
         addCode(content, "AUTH ANY");
         addBody(content, "Set hard incoming security authorization to any sender. AUTH SELECTED and AUTH OFF are also supported.");
         addCode(content, "ALLOW 711711");
-        addBody(content, "Add a sender to the selected authorization list. If incoming authorization was Off, ALLOW switches it to Selected. UNALLOW removes the list entry.");
+        addBody(content, "Authorize this sender and make it an always-forward exception. In Security codes mode, non-code messages from an ALLOW sender still forward. If automatic forwarding was Off, ALLOW switches it to Selected. UNALLOW removes both the authorization entry and always-forward exception.");
         addCode(content, "BLOCK 711711");
         addBody(content, "Hard-block a sender. UNBLOCK removes the block. A block always wins over authorization and forwarding preferences.");
         addCode(content, "MODE CODES");
@@ -111,11 +114,19 @@ public final class HelpActivity extends Activity {
         addSection(content, "Android permissions",
                 "The app requests RECEIVE_SMS and SEND_SMS only. It does not request READ_SMS and does not have Internet permission. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions.");
 
+        if (Build.VERSION.SDK_INT >= 37) {
+            addSection(content, "Android 17 OTP limitation",
+                    "Android 17 can withhold protected OTP messages from ordinary non-default SMS apps for up to 3 hours before SMS_RECEIVED is delivered. This applies to WebOTP-style messages such as a final line like @creditkarma.com #571782 regardless of this app's target SDK. If the rules self-test below says Credit Karma WOULD FORWARD but no “Incoming SMS received” activity appears when the real message arrives, Android withheld the message before SMS Forwarder could inspect it. Making SMS Forwarder the default SMS app would change that behavior but would also replace the normal SMS handler, so this app does not do that automatically.");
+        }
+
+        addSection(content, "Host-phone notifications and unread state",
+                "Because SMS Forwarder is not the default SMS app, it cannot prevent the normal Messages app from storing/notifying on a command SMS or mark that message read. Muting that conversation can stop ringing/notifications, but completely hiding or marking command messages read would require a different architecture such as becoming the default SMS handler.");
+
         addSection(content, "Privacy and diagnostics",
                 "Message bodies and verification codes are not stored in the diagnostic history. The app keeps only a small local runtime activity log with routing/result descriptions and addressing metadata so you can distinguish: SMS never reached the app, SMS reached the app but rules rejected it, send was queued, or Android reported a send failure. Remote-management commands are recorded only as rule/result descriptions, not message bodies. The runtime log is not included in Android backup.");
 
         addSection(content, "If nothing happened",
-                "Open this Help page and check Current setup and Recent activity. For an incoming SMS, you should see an “Incoming SMS received” event if Android delivered the broadcast to the app. For a bracket command, you should see whether it was blocked, queued, sent, or failed. If no receive event appears at all, investigate Android SMS permission/restricted-settings or device delivery rather than the forwarding filter.");
+                "First send PING from the downstream phone as carrier SMS, not RCS/chat. A PING reply proves both inbound SMS receipt and outbound SMS sending. Then check Current setup → Rules self-test. For a real incoming SMS, you should see an “Incoming SMS received” event if Android delivered the broadcast to the app. If the self-test says WOULD FORWARD but no receive event appears, the problem is upstream of the app (for example Android 17 OTP protection).");
 
         Button done = new Button(this);
         done.setText("Back to setup");
@@ -156,6 +167,32 @@ public final class HelpActivity extends Activity {
         }
         setup.append("\nLast status: ").append(ForwardingPreferences.status(this));
         addBody(content, setup.toString());
+
+        TextView testTitle = heading("Rules self-test", 17);
+        testTitle.setPadding(0, dp(14), 0, dp(4));
+        content.addView(testTitle);
+        String creditKarmaBody = "Credit Karma will NEVER call for this code. To prevent fraud, "
+                + "don't share it with anyone. Code: 571782.\n\n@creditkarma.com #571782";
+        StringBuilder tests = new StringBuilder();
+        if (profiles.isEmpty()) {
+            tests.append("No downstream profiles to test.");
+        } else {
+            for (PhoneProfile profile : profiles) {
+                if (tests.length() > 0) tests.append("\n");
+                tests.append("• ").append(profile.number)
+                        .append(": Credit Karma sample = ")
+                        .append(profile.permitsIncoming("CREDITKARMA", creditKarmaBody)
+                                ? "WOULD FORWARD" : "BLOCKED BY RULES")
+                        .append("; 711711 non-code sample = ")
+                        .append(profile.permitsIncoming("711711", "711 test message without a code")
+                                ? "WOULD FORWARD" : "BLOCKED BY RULES")
+                        .append("; remote admin = ")
+                        .append(profile.allowRemoteCommands ? "ON" : "OFF");
+            }
+        }
+        TextView testView = body(tests.toString());
+        testView.setTextIsSelectable(true);
+        content.addView(testView);
 
         List<String> activity = ForwardingPreferences.recentActivity(this);
         TextView recent = heading("Recent activity", 17);
