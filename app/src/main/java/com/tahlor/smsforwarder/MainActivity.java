@@ -407,12 +407,12 @@ public final class MainActivity extends Activity {
         rules.addView(heading("Automatic forwarding filters", 15));
 
         TextView note = body(
-                "Used only for Selected authorized senders. These entries never expand the security authorization.");
+                "Always-forward exceptions inside the security authorization. In Security codes mode, these senders forward even when the message has no detected code. They never expand the hard authorization.");
         note.setTextSize(13);
         note.setPadding(0, dp(2), 0, dp(6));
         rules.addView(note);
 
-        incomingPreferredInput = multilineInput("Preferred senders — one per line");
+        incomingPreferredInput = multilineInput("Always-forward senders — one per line");
         rules.addView(incomingPreferredInput, fullWidth());
         return rules;
     }
