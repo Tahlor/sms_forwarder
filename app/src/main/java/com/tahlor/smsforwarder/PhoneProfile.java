@@ -175,13 +175,17 @@ final class PhoneProfile {
 
     boolean permitsIncoming(String sender, String body) {
         if (!permitsIncomingAuthorization(sender) || body == null || body.isEmpty()) return false;
+        if (incomingPreference != IncomingPreference.OFF
+                && matchesAny(sender, incomingPreferredSenders)) {
+            return true;
+        }
         switch (incomingPreference) {
             case ALL_AUTHORIZED:
                 return true;
             case SECURITY_CODES:
                 return MessageFilter.containsSecurityCode(body);
             case SELECTED:
-                return matchesAny(sender, incomingPreferredSenders);
+                return false;
             default:
                 return false;
         }
