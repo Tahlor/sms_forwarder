@@ -2,7 +2,7 @@
 
 A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-Version **0.2.1 / versionCode 13** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
+Version **0.2.2 / versionCode 14** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
 ## Security model
 
@@ -24,7 +24,7 @@ Inside the incoming authorization, choose:
 
 - **Forward nothing**
 - **All authorized messages**
-- **Security codes only**
+- **Security codes only** — detected codes plus any explicitly preferred/ALLOW sender
 - **Selected authorized senders**
 
 Effective delivery is always:
@@ -119,7 +119,7 @@ ALLOW 711711
 UNALLOW 711711
 ```
 
-Adds/removes a sender from the selected authorization list. If authorization is Off, `ALLOW` switches it to Selected.
+`ALLOW` is the convenient "always forward this sender" shortcut: it puts the sender inside the hard authorization and the always-forward/preferred list. In Security codes mode, that sender's non-code messages also forward. If automatic forwarding is Off, ALLOW switches it to Selected. `UNALLOW` removes both entries.
 
 ```text
 BLOCK 711711
@@ -145,12 +145,15 @@ UNPREFER 711711
 Changes the sender list used by `MODE SELECTED`. A sender must already be inside the hard authorization and not blocked.
 
 ```text
+PING
 LIST
 STATUS
 HELP
 ```
 
-Returns the current rules, last routing status, or command cheat sheet.
+`PING` is read-only and works even when remote management is disabled. It proves that the command arrived as carrier SMS and that the app can send a reply. `LIST`, `STATUS`, and `HELP` require remote management because they expose/manage the profile.
+
+Remote commands must arrive as **SMS**, not RCS/chat. If PING produces no response and no Recent activity entry, force the message to send as SMS before debugging the rule parser.
 
 ## Reply window
 
@@ -285,3 +288,16 @@ The Archimedes deployment is intentionally gated and repeatable:
    `/var/www/html/apks/sms-code-forwarder-latest.apk`.
 
 The deployment script deliberately refuses dirty or divergent checkouts and refuses to publish a version code that is not newer than the public APK.
+
+
+## Android 17 OTP delivery limitation
+
+On Android 17, protected OTP messages can be withheld from ordinary non-default SMS apps before `SMS_RECEIVED_ACTION` is delivered. WebOTP-style messages such as:
+
+```text
+@creditkarma.com #571782
+```
+
+can therefore be delayed before SMS Forwarder sees them, even when this app's own rules would forward them. The in-app Help page includes a rules self-test so this can be distinguished from an app-level filtering failure.
+
+SMS Forwarder intentionally does not make itself the default SMS app. As a consequence, it also cannot prevent the default Messages app from storing/notifying on command SMS or mark those messages read.
