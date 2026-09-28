@@ -16,6 +16,8 @@ final class ShortCodeRelay {
             Pattern.compile("(?i)^(HELP|COMMANDS|INFO)$");
     private static final Pattern MGMT_STATUS =
             Pattern.compile("(?i)^STATUS$");
+    private static final Pattern MGMT_PING =
+            Pattern.compile("(?i)^(PING|TEST)$");
     private static final Pattern MGMT_LIST =
             Pattern.compile("(?i)^(LIST|RULES|CONFIG)$");
     private static final Pattern MGMT_ALLOW =
@@ -59,6 +61,9 @@ final class ShortCodeRelay {
         }
         if (MGMT_STATUS.matcher(s).matches()) {
             return new ManagementCommand(ManagementAction.STATUS, "");
+        }
+        if (MGMT_PING.matcher(s).matches()) {
+            return new ManagementCommand(ManagementAction.PING, "");
         }
         if (MGMT_LIST.matcher(s).matches()) {
             return new ManagementCommand(ManagementAction.LIST, "");
@@ -193,7 +198,8 @@ final class ShortCodeRelay {
         UNPREFER,
         LIST,
         HELP,
-        STATUS
+        STATUS,
+        PING
     }
 
     static final class ManagementCommand {
