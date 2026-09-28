@@ -487,7 +487,7 @@ public final class MainActivity extends Activity {
         incomingAuthorizationSpinner.setSelection(
                 PhoneProfile.IncomingAuthorization.NONE.ordinal());
         incomingPreferenceSpinner.setSelection(
-                PhoneProfile.IncomingPreference.SECURITY_CODES.ordinal());
+                PhoneProfile.IncomingPreference.OFF.ordinal());
         outgoingModeSpinner.setSelection(PhoneProfile.OutgoingMode.OFF.ordinal());
         codeCopyFollowupCheck.setChecked(true);
         incomingAuthorizedInput.setText("");
