@@ -107,6 +107,40 @@ public class PhoneProfileTest {
 
 
     @Test
+    public void preferredSenderOverridesCodesPreferenceButNotSecurityAuthorizationOrBlock() {
+        PhoneProfile allowed = new PhoneProfile(
+                "+15550000000",
+                PhoneProfile.IncomingAuthorization.ANY,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                PhoneProfile.IncomingPreference.SECURITY_CODES,
+                Arrays.asList("711711"),
+                true,
+                PhoneProfile.OutgoingMode.OFF,
+                Collections.emptyList(),
+                Collections.emptyList());
+
+        assertTrue(allowed.permitsIncoming("711711", "Save $1 on gas today."));
+        assertFalse(allowed.permitsIncoming("+15553334444", "Ordinary non-code text"));
+
+        PhoneProfile selectedAuth = new PhoneProfile(
+                "+15550000000",
+                PhoneProfile.IncomingAuthorization.SELECTED,
+                Arrays.asList("711711"),
+                Arrays.asList("888888"),
+                PhoneProfile.IncomingPreference.SECURITY_CODES,
+                Arrays.asList("711711", "999999"),
+                true,
+                PhoneProfile.OutgoingMode.OFF,
+                Collections.emptyList(),
+                Collections.emptyList());
+
+        assertTrue(selectedAuth.permitsIncoming("711711", "Ordinary text"));
+        assertFalse(selectedAuth.permitsIncoming("999999", "Ordinary text"));
+        assertFalse(selectedAuth.permitsIncoming("888888", "Code: 123456"));
+    }
+
+    @Test
     public void remoteManagementIsOffByDefaultAndCountsAsExplicitCapabilityOnlyWhenEnabled() {
         PhoneProfile defaultProfile = new PhoneProfile(
                 "+15550000000",
