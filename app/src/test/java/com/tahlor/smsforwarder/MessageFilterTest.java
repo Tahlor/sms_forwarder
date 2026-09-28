@@ -18,6 +18,17 @@ public class MessageFilterTest {
     }
 
     @Test
+    public void creditKarmaMessageMatchesAndExtractsReportedCode() {
+        String body = "Credit Karma will NEVER call for this code. To prevent fraud, "
+                + "don't share it with anyone. Code: 571782.\n\n"
+                + "@creditkarma.com #571782";
+
+        assertTrue(MessageFilter.containsSecurityCode(body));
+        assertTrue(MessageFilter.shouldForward(body, true));
+        assertEquals("571782", MessageFilter.extractCode(body));
+    }
+
+    @Test
     public void disabledFilterForwardsAnyNonEmptyMessage() {
         assertTrue(MessageFilter.shouldForward("hello", false));
         assertFalse(MessageFilter.shouldForward("", false));

@@ -28,10 +28,10 @@ public final class ForwardDeliveryReceiver extends BroadcastReceiver {
 
         if (completion == ForwardDeliveryTracker.Completion.FAILED) {
             ForwardingPreferences.setStatus(context,
-                    "The code-only copy may have arrived, but the full forwarded SMS did not send completely.");
+                    "The full forwarded SMS did not send completely.");
         } else {
             ForwardingPreferences.setStatus(context,
-                    "Full forwarded SMS sent successfully; code-only copy was queued immediately.");
+                    "Full forwarded SMS sent successfully.");
         }
     }
 }

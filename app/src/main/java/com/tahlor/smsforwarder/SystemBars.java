@@ -11,11 +11,8 @@ import android.view.WindowInsetsController;
 final class SystemBars {
     private SystemBars() {}
 
-    static void configure(Activity activity, View root, int backgroundColor) {
+    static void configure(Activity activity, View root, int backgroundColor, boolean darkTheme) {
         Window window = activity.getWindow();
-
-        // Android 15+ enforces edge-to-edge for targetSdk 35. Keep the app background
-        // behind the transparent bars, then inset the interactive content below.
         root.setBackgroundColor(backgroundColor);
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -28,12 +25,15 @@ final class SystemBars {
             if (controller != null) {
                 int lightBars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
                         | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(lightBars, lightBars);
+                controller.setSystemBarsAppearance(darkTheme ? 0 : lightBars, lightBars);
             }
         } else {
-            int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            int flags = 0;
+            if (!darkTheme) {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
             }
             window.getDecorView().setSystemUiVisibility(flags);
         }

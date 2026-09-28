@@ -10,7 +10,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:label="SMS Code Forwarder"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
 
         <activity
@@ -29,6 +29,11 @@
 
         <receiver
             android:name=".ForwardDeliveryReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name=".RelayDeliveryReceiver"
             android:enabled="true"
             android:exported="false" />
 

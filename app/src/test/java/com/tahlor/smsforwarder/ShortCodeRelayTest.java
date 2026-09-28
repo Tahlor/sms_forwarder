@@ -3,6 +3,7 @@ package com.tahlor.smsforwarder;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -24,8 +25,36 @@ public class ShortCodeRelayTest {
     }
 
     @Test
+    public void exactReportedNormalNumberSaveCommandIsAuthorized() {
+        PhoneProfile downstream = new PhoneProfile(
+                "6105737638",
+                PhoneProfile.IncomingAuthorization.ANY,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                PhoneProfile.IncomingPreference.SECURITY_CODES,
+                Collections.emptyList(),
+                true,
+                PhoneProfile.OutgoingMode.ANY,
+                Collections.emptyList(),
+                Collections.emptyList());
+        List<PhoneProfile> profiles = new ArrayList<>();
+        profiles.add(downstream);
+
+        ShortCodeRelay.Command command =
+                ShortCodeRelay.parseCommand("[8552448147] SAVE");
+        PhoneProfile matched =
+                ShortCodeRelay.findRegisteredProfile(profiles, "+1 (610) 573-7638");
+
+        assertEquals("8552448147", command.destination);
+        assertEquals("SAVE", command.payload);
+        assertSame(downstream, matched);
+        assertTrue(matched.permitsOutgoing(command.destination));
+    }
+
+    @Test
     public void parsesNormalPhoneNumberTargets() {
-        ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[+1 (801) 555-1212] see you at 7");
+        ShortCodeRelay.Command command =
+                ShortCodeRelay.parseCommand("[+1 (801) 555-1212] see you at 7");
         assertEquals("18015551212", command.destination);
         assertEquals("see you at 7", command.payload);
     }
@@ -45,7 +74,8 @@ public class ShortCodeRelayTest {
         profiles.add(downstream);
 
         ShortCodeRelay.Command command = ShortCodeRelay.parseCommand("[711711] SAVE");
-        PhoneProfile matched = ShortCodeRelay.findRegisteredProfile(profiles, "801-555-1212");
+        PhoneProfile matched =
+                ShortCodeRelay.findRegisteredProfile(profiles, "801-555-1212");
 
         assertEquals("711711", command.destination);
         assertEquals("SAVE", command.payload);

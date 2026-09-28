@@ -3,6 +3,7 @@ package com.tahlor.smsforwarder;
 import android.app.backup.BackupManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.text.format.DateFormat;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -10,6 +11,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 final class ForwardingPreferences {
@@ -18,6 +20,8 @@ final class ForwardingPreferences {
     private static final String KEY_PROFILES = "phone_profiles_v1";
     private static final String KEY_USER_DELETED = "user_deleted_setup";
     private static final String KEY_STATUS = "status";
+    private static final String KEY_ACTIVITY = "activity_log_v1";
+    private static final int MAX_ACTIVITY_ENTRIES = 12;
 
     private static final String KEY_DESTINATION = "destination";
     private static final String KEY_ENABLED = "enabled";
@@ -51,29 +55,76 @@ final class ForwardingPreferences {
                 if (object == null) continue;
                 String number = object.optString("number", "").trim();
                 if (number.isEmpty()) continue;
-
-                PhoneProfile.IncomingMode incomingMode = PhoneProfile.IncomingMode.fromStored(
-                        nullableString(object, "incomingMode"),
-                        object.optBoolean("forwardEnabled", true),
-                        object.optBoolean("codeOnly", true));
-                PhoneProfile.OutgoingMode outgoingMode = PhoneProfile.OutgoingMode.fromStored(
-                        nullableString(object, "outgoingMode"),
-                        object.optBoolean("relayEnabled", true));
-
-                result.add(new PhoneProfile(
-                        number,
-                        incomingMode,
-                        readStringList(object.optJSONArray("incomingAllowList")),
-                        readStringList(object.optJSONArray("incomingBlockList")),
-                        object.optBoolean("codeCopyFollowup", true),
-                        outgoingMode,
-                        readStringList(object.optJSONArray("outgoingAllowList")),
-                        readStringList(object.optJSONArray("outgoingBlockList"))));
+                result.add(readProfile(object, number));
             }
         } catch (JSONException ignored) {
             setStatus(context, "Saved phone profiles could not be read; open the app and save them again.");
         }
         return result;
+    }
+
+    private static PhoneProfile readProfile(JSONObject object, String number) {
+        if (object.has("incomingAuthorization") || object.has("incomingPreference")) {
+            return new PhoneProfile(
+                    number,
+                    PhoneProfile.IncomingAuthorization.fromStored(
+                            nullableString(object, "incomingAuthorization")),
+                    readStringList(object.optJSONArray("incomingAuthorizedSenders")),
+                    readStringList(object.optJSONArray("incomingBlockedSenders")),
+                    PhoneProfile.IncomingPreference.fromStored(
+                            nullableString(object, "incomingPreference")),
+                    readStringList(object.optJSONArray("incomingPreferredSenders")),
+                    object.optBoolean("codeCopyFollowup", true),
+                    PhoneProfile.OutgoingMode.fromStored(
+                            nullableString(object, "outgoingMode"),
+                            object.optBoolean("relayEnabled", false)),
+                    readStringList(object.optJSONArray("outgoingAllowList")),
+                    readStringList(object.optJSONArray("outgoingBlockList")));
+        }
+
+        String oldMode = nullableString(object, "incomingMode");
+        if (oldMode == null) {
+            boolean enabled = object.optBoolean("forwardEnabled", true);
+            oldMode = enabled
+                    ? (object.optBoolean("codeOnly", true) ? "SECURITY_CODES" : "ALL")
+                    : "OFF";
+        }
+
+        List<String> oldAllow = readStringList(object.optJSONArray("incomingAllowList"));
+        List<String> oldBlock = readStringList(object.optJSONArray("incomingBlockList"));
+        PhoneProfile.IncomingAuthorization authorization;
+        PhoneProfile.IncomingPreference preference;
+        switch (oldMode) {
+            case "ALL":
+                authorization = PhoneProfile.IncomingAuthorization.ANY;
+                preference = PhoneProfile.IncomingPreference.ALL_AUTHORIZED;
+                break;
+            case "SECURITY_CODES":
+                authorization = PhoneProfile.IncomingAuthorization.ANY;
+                preference = PhoneProfile.IncomingPreference.SECURITY_CODES;
+                break;
+            case "SELECTED":
+                authorization = PhoneProfile.IncomingAuthorization.SELECTED;
+                preference = PhoneProfile.IncomingPreference.ALL_AUTHORIZED;
+                break;
+            default:
+                authorization = PhoneProfile.IncomingAuthorization.NONE;
+                preference = PhoneProfile.IncomingPreference.OFF;
+        }
+
+        return new PhoneProfile(
+                number,
+                authorization,
+                oldAllow,
+                oldBlock,
+                preference,
+                Collections.emptyList(),
+                object.optBoolean("codeCopyFollowup", true),
+                PhoneProfile.OutgoingMode.fromStored(
+                        nullableString(object, "outgoingMode"),
+                        object.optBoolean("relayEnabled", true)),
+                readStringList(object.optJSONArray("outgoingAllowList")),
+                readStringList(object.optJSONArray("outgoingBlockList")));
     }
 
     static void saveProfile(Context context, PhoneProfile profile) {
@@ -122,8 +173,38 @@ final class ForwardingPreferences {
         return runtimePrefs(context).getString(KEY_STATUS, "Not configured yet.");
     }
 
-    static void setStatus(Context context, String status) {
-        runtimePrefs(context).edit().putString(KEY_STATUS, status).apply();
+    static synchronized void setStatus(Context context, String status) {
+        String safeStatus = status == null ? "" : status.trim();
+        SharedPreferences preferences = runtimePrefs(context);
+        SharedPreferences.Editor editor = preferences.edit().putString(KEY_STATUS, safeStatus);
+
+        JSONArray next = new JSONArray();
+        String timestamp = DateFormat.getMediumDateFormat(context).format(new Date())
+                + " " + DateFormat.getTimeFormat(context).format(new Date());
+        next.put(timestamp + " — " + safeStatus);
+
+        String encoded = preferences.getString(KEY_ACTIVITY, "[]");
+        try {
+            JSONArray current = new JSONArray(encoded == null ? "[]" : encoded);
+            for (int i = 0; i < current.length() && next.length() < MAX_ACTIVITY_ENTRIES; i++) {
+                String item = current.optString(i, "");
+                if (!item.isEmpty()) next.put(item);
+            }
+        } catch (JSONException ignored) {}
+        editor.putString(KEY_ACTIVITY, next.toString()).apply();
+    }
+
+    static List<String> recentActivity(Context context) {
+        String encoded = runtimePrefs(context).getString(KEY_ACTIVITY, "[]");
+        ArrayList<String> result = new ArrayList<>();
+        try {
+            JSONArray array = new JSONArray(encoded == null ? "[]" : encoded);
+            for (int i = 0; i < array.length(); i++) {
+                String value = array.optString(i, "").trim();
+                if (!value.isEmpty()) result.add(value);
+            }
+        } catch (JSONException ignored) {}
+        return result;
     }
 
     static void startReplyRelay(Context context, String controllerNumber, String destination,
@@ -176,19 +257,41 @@ final class ForwardingPreferences {
         boolean relayEnabled = preferences.getBoolean(KEY_SHORT_CODE_RELAY_ENABLED, true);
 
         if (!destination.isEmpty()) {
+            boolean forwardEnabled = preferences.getBoolean(KEY_ENABLED, false);
+            boolean codeOnly = preferences.getBoolean(KEY_CODE_ONLY, true);
             boolean destinationControlsRelay = relayEnabled
                     && (controller.isEmpty() || ShortCodeRelay.sameAddress(destination, controller));
             migrated.add(new PhoneProfile(
                     destination,
-                    preferences.getBoolean(KEY_ENABLED, false),
-                    preferences.getBoolean(KEY_CODE_ONLY, true),
+                    forwardEnabled ? PhoneProfile.IncomingAuthorization.ANY
+                            : PhoneProfile.IncomingAuthorization.NONE,
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    forwardEnabled
+                            ? (codeOnly ? PhoneProfile.IncomingPreference.SECURITY_CODES
+                                    : PhoneProfile.IncomingPreference.ALL_AUTHORIZED)
+                            : PhoneProfile.IncomingPreference.OFF,
+                    Collections.emptyList(),
                     preferences.getBoolean(KEY_CODE_COPY_FOLLOWUP, true),
-                    destinationControlsRelay));
+                    destinationControlsRelay ? PhoneProfile.OutgoingMode.SHORT_CODES
+                            : PhoneProfile.OutgoingMode.OFF,
+                    Collections.emptyList(),
+                    Collections.emptyList()));
         }
 
         if (relayEnabled && !controller.isEmpty()
                 && (destination.isEmpty() || !ShortCodeRelay.sameAddress(destination, controller))) {
-            migrated.add(new PhoneProfile(controller, false, true, false, true));
+            migrated.add(new PhoneProfile(
+                    controller,
+                    PhoneProfile.IncomingAuthorization.NONE,
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    PhoneProfile.IncomingPreference.OFF,
+                    Collections.emptyList(),
+                    false,
+                    PhoneProfile.OutgoingMode.SHORT_CODES,
+                    Collections.emptyList(),
+                    Collections.emptyList()));
         }
 
         preferences.edit()
@@ -211,10 +314,16 @@ final class ForwardingPreferences {
             if (profile == null || profile.number.isEmpty()) continue;
             JSONObject object = new JSONObject();
             try {
+                object.put("modelVersion", 2);
                 object.put("number", profile.number);
-                object.put("incomingMode", profile.incomingMode.name());
-                object.put("incomingAllowList", toJsonArray(profile.incomingAllowList));
-                object.put("incomingBlockList", toJsonArray(profile.incomingBlockList));
+                object.put("incomingAuthorization", profile.incomingAuthorization.name());
+                object.put("incomingAuthorizedSenders",
+                        toJsonArray(profile.incomingAuthorizedSenders));
+                object.put("incomingBlockedSenders",
+                        toJsonArray(profile.incomingBlockedSenders));
+                object.put("incomingPreference", profile.incomingPreference.name());
+                object.put("incomingPreferredSenders",
+                        toJsonArray(profile.incomingPreferredSenders));
                 object.put("codeCopyFollowup", profile.codeCopyFollowup);
                 object.put("outgoingMode", profile.outgoingMode.name());
                 object.put("outgoingAllowList", toJsonArray(profile.outgoingAllowList));

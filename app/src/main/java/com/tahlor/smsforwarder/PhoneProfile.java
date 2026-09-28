@@ -5,28 +5,42 @@ import java.util.Collections;
 import java.util.List;
 
 final class PhoneProfile {
-    enum IncomingMode {
-        ALL,
-        SECURITY_CODES,
-        SELECTED,
-        OFF;
+    enum IncomingAuthorization {
+        NONE,
+        ANY,
+        SELECTED;
 
-        static IncomingMode fromStored(String value, boolean legacyEnabled, boolean legacyCodeOnly) {
+        static IncomingAuthorization fromStored(String value) {
             if (value != null) {
                 try {
                     return valueOf(value);
                 } catch (IllegalArgumentException ignored) {}
             }
-            if (!legacyEnabled) return OFF;
-            return legacyCodeOnly ? SECURITY_CODES : ALL;
+            return NONE;
+        }
+    }
+
+    enum IncomingPreference {
+        OFF,
+        ALL_AUTHORIZED,
+        SECURITY_CODES,
+        SELECTED;
+
+        static IncomingPreference fromStored(String value) {
+            if (value != null) {
+                try {
+                    return valueOf(value);
+                } catch (IllegalArgumentException ignored) {}
+            }
+            return OFF;
         }
     }
 
     enum OutgoingMode {
-        ANY,
+        OFF,
         SHORT_CODES,
         SELECTED,
-        OFF;
+        ANY;
 
         static OutgoingMode fromStored(String value, boolean legacyRelayEnabled) {
             if (value != null) {
@@ -39,39 +53,51 @@ final class PhoneProfile {
     }
 
     final String number;
-    final IncomingMode incomingMode;
-    final List<String> incomingAllowList;
-    final List<String> incomingBlockList;
+    final IncomingAuthorization incomingAuthorization;
+    final List<String> incomingAuthorizedSenders;
+    final List<String> incomingBlockedSenders;
+    final IncomingPreference incomingPreference;
+    final List<String> incomingPreferredSenders;
     final boolean codeCopyFollowup;
     final OutgoingMode outgoingMode;
     final List<String> outgoingAllowList;
     final List<String> outgoingBlockList;
 
     PhoneProfile(String number,
-                 IncomingMode incomingMode,
-                 List<String> incomingAllowList,
-                 List<String> incomingBlockList,
+                 IncomingAuthorization incomingAuthorization,
+                 List<String> incomingAuthorizedSenders,
+                 List<String> incomingBlockedSenders,
+                 IncomingPreference incomingPreference,
+                 List<String> incomingPreferredSenders,
                  boolean codeCopyFollowup,
                  OutgoingMode outgoingMode,
                  List<String> outgoingAllowList,
                  List<String> outgoingBlockList) {
         this.number = number == null ? "" : number.trim();
-        this.incomingMode = incomingMode == null ? IncomingMode.OFF : incomingMode;
-        this.incomingAllowList = cleanList(incomingAllowList);
-        this.incomingBlockList = cleanList(incomingBlockList);
+        this.incomingAuthorization = incomingAuthorization == null
+                ? IncomingAuthorization.NONE : incomingAuthorization;
+        this.incomingAuthorizedSenders = cleanList(incomingAuthorizedSenders);
+        this.incomingBlockedSenders = cleanList(incomingBlockedSenders);
+        this.incomingPreference = incomingPreference == null
+                ? IncomingPreference.OFF : incomingPreference;
+        this.incomingPreferredSenders = cleanList(incomingPreferredSenders);
         this.codeCopyFollowup = codeCopyFollowup;
         this.outgoingMode = outgoingMode == null ? OutgoingMode.OFF : outgoingMode;
         this.outgoingAllowList = cleanList(outgoingAllowList);
         this.outgoingBlockList = cleanList(outgoingBlockList);
     }
 
-    // Compatibility constructor for legacy settings/tests.
+    // Compatibility constructor retained for legacy migration/tests.
     PhoneProfile(String number, boolean forwardEnabled, boolean codeOnly,
                  boolean codeCopyFollowup, boolean relayEnabled) {
         this(number,
-                forwardEnabled ? (codeOnly ? IncomingMode.SECURITY_CODES : IncomingMode.ALL)
-                        : IncomingMode.OFF,
+                forwardEnabled ? IncomingAuthorization.ANY : IncomingAuthorization.NONE,
                 Collections.emptyList(),
+                Collections.emptyList(),
+                forwardEnabled
+                        ? (codeOnly ? IncomingPreference.SECURITY_CODES
+                                : IncomingPreference.ALL_AUTHORIZED)
+                        : IncomingPreference.OFF,
                 Collections.emptyList(),
                 codeCopyFollowup,
                 relayEnabled ? OutgoingMode.SHORT_CODES : OutgoingMode.OFF,
@@ -79,48 +105,74 @@ final class PhoneProfile {
                 Collections.emptyList());
     }
 
-    boolean hasAnyFeatureEnabled() {
-        return incomingMode != IncomingMode.OFF || outgoingMode != OutgoingMode.OFF;
+    boolean hasAnyCapabilityEnabled() {
+        return incomingAuthorization != IncomingAuthorization.NONE
+                || outgoingMode != OutgoingMode.OFF;
+    }
+
+    boolean permitsIncomingAuthorization(String sender) {
+        if (incomingAuthorization == IncomingAuthorization.NONE) return false;
+        if (matchesAny(sender, incomingBlockedSenders)) return false;
+        return incomingAuthorization == IncomingAuthorization.ANY
+                || matchesAny(sender, incomingAuthorizedSenders);
     }
 
     boolean permitsIncoming(String sender, String body) {
-        if (incomingMode == IncomingMode.OFF || body == null || body.isEmpty()) return false;
-        if (matchesAny(sender, incomingBlockList)) return false;
-        if (incomingMode == IncomingMode.SELECTED && !matchesAny(sender, incomingAllowList)) return false;
-        return incomingMode != IncomingMode.SECURITY_CODES || MessageFilter.containsSecurityCode(body);
+        if (!permitsIncomingAuthorization(sender) || body == null || body.isEmpty()) return false;
+        switch (incomingPreference) {
+            case ALL_AUTHORIZED:
+                return true;
+            case SECURITY_CODES:
+                return MessageFilter.containsSecurityCode(body);
+            case SELECTED:
+                return matchesAny(sender, incomingPreferredSenders);
+            default:
+                return false;
+        }
     }
 
     boolean permitsOutgoing(String destination) {
         if (outgoingMode == OutgoingMode.OFF) return false;
         if (matchesAny(destination, outgoingBlockList)) return false;
-        if (outgoingMode == OutgoingMode.SELECTED) return matchesAny(destination, outgoingAllowList);
-        return outgoingMode != OutgoingMode.SHORT_CODES || ShortCodeRelay.isShortCode(destination);
+        if (outgoingMode == OutgoingMode.SELECTED) {
+            return matchesAny(destination, outgoingAllowList);
+        }
+        if (outgoingMode == OutgoingMode.SHORT_CODES) {
+            return ShortCodeRelay.isShortCode(destination);
+        }
+        return ShortCodeRelay.isRoutableDestination(destination);
     }
 
     String summary() {
-        StringBuilder summary = new StringBuilder(number);
-        summary.append(" — incoming: ").append(incomingLabel());
-        summary.append("; outgoing: ").append(outgoingLabel());
-        if (!incomingBlockList.isEmpty()) summary.append("; ").append(incomingBlockList.size()).append(" incoming blocked");
-        if (!outgoingBlockList.isEmpty()) summary.append("; ").append(outgoingBlockList.size()).append(" outgoing blocked");
-        return summary.toString();
+        return number
+                + " — incoming authorization: " + authorizationLabel()
+                + "; automatic forwarding: " + preferenceLabel()
+                + "; outgoing authorization: " + outgoingLabel();
     }
 
-    private String incomingLabel() {
-        switch (incomingMode) {
-            case ALL: return "all";
-            case SECURITY_CODES: return "security codes";
+    String authorizationLabel() {
+        switch (incomingAuthorization) {
+            case ANY: return "any sender";
             case SELECTED: return "selected senders";
-            default: return "off";
+            default: return "none";
         }
     }
 
-    private String outgoingLabel() {
+    String preferenceLabel() {
+        switch (incomingPreference) {
+            case ALL_AUTHORIZED: return "all authorized messages";
+            case SECURITY_CODES: return "security codes";
+            case SELECTED: return "selected authorized senders";
+            default: return "nothing";
+        }
+    }
+
+    String outgoingLabel() {
         switch (outgoingMode) {
-            case ANY: return "any number";
+            case ANY: return "any destination";
             case SHORT_CODES: return "short codes";
-            case SELECTED: return "selected numbers";
-            default: return "off";
+            case SELECTED: return "selected destinations";
+            default: return "none";
         }
     }
 

@@ -42,7 +42,7 @@ public final class SmsReceiver extends BroadcastReceiver {
         List<PhoneProfile> profiles = ForwardingPreferences.profiles(context);
         if (profiles.isEmpty()) {
             ForwardingPreferences.setStatus(context,
-                    "Received SMS, but no downstream phone is configured yet.");
+                    "Incoming SMS reached the app, but no downstream phone is configured.");
             return;
         }
 
@@ -50,7 +50,15 @@ public final class SmsReceiver extends BroadcastReceiver {
         for (Map.Entry<String, StringBuilder> entry : bodiesBySender.entrySet()) {
             String sender = entry.getKey();
             String body = entry.getValue().toString();
-            if (body.startsWith(FORWARD_PREFIX)) continue;
+            String displaySender = ShortCodeRelay.formatSenderForDisplay(sender);
+            ForwardingPreferences.setStatus(context,
+                    "Incoming SMS received from " + displaySender + "; evaluating rules.");
+
+            if (body.startsWith(FORWARD_PREFIX)) {
+                ForwardingPreferences.setStatus(context,
+                        "Ignored an SMS Forwarder acknowledgement to prevent a forwarding loop.");
+                continue;
+            }
 
             long smsTimestamp = timestampsBySender.containsKey(sender)
                     ? timestampsBySender.get(sender) : 0L;
@@ -65,36 +73,57 @@ public final class SmsReceiver extends BroadcastReceiver {
             if (handleActiveReply(context, profiles, sender, body)) continue;
             if (!hasSendPermission(context)) {
                 ForwardingPreferences.setStatus(context,
-                        "Received SMS but cannot forward it because Send SMS access is missing.");
+                        "Incoming SMS matched the receiver, but Send SMS access is missing.");
                 continue;
             }
 
             boolean queuedAnywhere = false;
+            int matchedProfiles = 0;
             for (PhoneProfile profile : profiles) {
                 if (!profile.permitsIncoming(sender, body)) continue;
+                matchedProfiles++;
 
-                String displaySender = ShortCodeRelay.formatSenderForDisplay(sender);
                 String forwarded = FORWARD_PREFIX + "\nFrom: " + displaySender + "\n" + body;
                 String extractedCode = MessageFilter.extractCode(body);
                 try {
                     SmsManager smsManager = SmsManager.getDefault();
                     sendTrackedMessage(context, smsManager, profile.number, forwarded);
-                    if (profile.codeCopyFollowup && extractedCode != null) {
-                        smsManager.sendTextMessage(profile.number, null, extractedCode, null, null);
-                    }
                     queuedAnywhere = true;
+                    ForwardingPreferences.setStatus(context,
+                            "Incoming SMS from " + displaySender
+                                    + " matched forwarding rules; full message queued for "
+                                    + profile.number + ".");
+
+                    if (profile.codeCopyFollowup && extractedCode != null) {
+                        try {
+                            smsManager.sendTextMessage(
+                                    profile.number, null, extractedCode, null, null);
+                            ForwardingPreferences.setStatus(context,
+                                    "Code-only copy also queued for " + profile.number + ".");
+                        } catch (RuntimeException e) {
+                            ForwardingPreferences.setStatus(context,
+                                    "Full message was queued for " + profile.number
+                                            + ", but the code-only copy could not be queued.");
+                        }
+                    }
                 } catch (SecurityException e) {
-                    ForwardingPreferences.setStatus(context, "Android denied SMS forwarding permission.");
+                    ForwardingPreferences.setStatus(context,
+                            "Android denied SMS forwarding permission for " + profile.number + ".");
                 } catch (RuntimeException e) {
-                    ForwardingPreferences.setStatus(context, "Forwarding failed for " + profile.number + ".");
+                    ForwardingPreferences.setStatus(context,
+                            "Forwarding could not be queued for " + profile.number + ".");
                 }
             }
-            if (queuedAnywhere) {
-                ForwardingPreferences.setStatus(context,
-                        "Queued the full forwarded SMS and any code-only copy immediately.");
-            } else {
-                ForwardingPreferences.setStatus(context,
-                        "Received SMS; current forwarding rules did not match it.");
+
+            if (!queuedAnywhere) {
+                if (matchedProfiles == 0) {
+                    ForwardingPreferences.setStatus(context,
+                            "Incoming SMS from " + displaySender
+                                    + " was received, but no phone's authorization and forwarding preference matched it.");
+                } else {
+                    ForwardingPreferences.setStatus(context,
+                            "Incoming SMS matched a profile, but no forwarding send was queued.");
+                }
             }
         }
     }
@@ -110,32 +139,57 @@ public final class SmsReceiver extends BroadcastReceiver {
         String displayDestination = ShortCodeRelay.formatDestination(command.destination);
         if (!controller.permitsOutgoing(command.destination)) {
             ForwardingPreferences.setStatus(context,
-                    "Blocked outgoing message to " + displayDestination + " by the downstream rules.");
+                    "Blocked relay command to " + displayDestination
+                            + " by this phone's outgoing authorization.");
+            if (hasSendPermission(context)) {
+                RelayDeliveryReceiver.sendAcknowledgement(
+                        context, controller.number,
+                        "Blocked: " + displayDestination
+                                + " is not allowed by this phone's relay permission.");
+            }
             return true;
         }
+
         if (!hasSendPermission(context)) {
             ForwardingPreferences.setStatus(context,
-                    "Received an outgoing command, but Send SMS access is missing.");
+                    "Relay command received for " + displayDestination
+                            + ", but Send SMS access is missing.");
+            return true;
+        }
+
+        if (command.payload.isEmpty()) {
+            ForwardingPreferences.startReplyRelay(
+                    context, controller.number, command.destination, System.currentTimeMillis());
+            ForwardingPreferences.setStatus(context,
+                    "Opened a 5-minute reply window for " + displayDestination + ".");
+            RelayDeliveryReceiver.sendAcknowledgement(
+                    context, controller.number,
+                    "Reply window open for " + displayDestination + " for 5 minutes.");
             return true;
         }
 
         try {
-            ForwardingPreferences.startReplyRelay(
-                    context, controller.number, command.destination, System.currentTimeMillis());
-            if (!command.payload.isEmpty()) {
-                sendMessage(SmsManager.getDefault(), command.destination, command.payload);
-                ForwardingPreferences.setStatus(context,
-                        "Sent downstream message to " + displayDestination
-                                + "; replies will return for 5 minutes.");
-            } else {
-                ForwardingPreferences.setStatus(context,
-                        "Opened a 5-minute reply window for " + displayDestination + ".");
-            }
+            sendTrackedRelayMessage(
+                    context,
+                    SmsManager.getDefault(),
+                    controller.number,
+                    command.destination,
+                    command.payload);
+            ForwardingPreferences.setStatus(context,
+                    "Relay command accepted for " + displayDestination
+                            + "; waiting for carrier send result.");
         } catch (SecurityException e) {
-            ForwardingPreferences.setStatus(context, "Android denied the outgoing SMS send.");
+            ForwardingPreferences.setStatus(context,
+                    "Android denied the relay send to " + displayDestination + ".");
+            RelayDeliveryReceiver.sendAcknowledgement(
+                    context, controller.number,
+                    "Failed: Android denied the send to " + displayDestination + ".");
         } catch (RuntimeException e) {
             ForwardingPreferences.setStatus(context,
-                    "Outgoing SMS failed for " + displayDestination + ".");
+                    "Relay send could not be queued for " + displayDestination + ".");
+            RelayDeliveryReceiver.sendAcknowledgement(
+                    context, controller.number,
+                    "Failed to queue the send to " + displayDestination + ".");
         }
         return true;
     }
@@ -152,28 +206,32 @@ public final class SmsReceiver extends BroadcastReceiver {
                     || !ShortCodeRelay.senderMatchesDestination(sender, activeDestination)) continue;
             if (!hasSendPermission(context)) {
                 ForwardingPreferences.setStatus(context,
-                        "Received a reply, but Send SMS access is missing.");
+                        "Reply reached the app, but Send SMS access is missing.");
                 return true;
             }
             try {
-                String relayedBody = "[" + ShortCodeRelay.formatDestination(activeDestination) + "] " + body;
+                String relayedBody = "[" + ShortCodeRelay.formatDestination(activeDestination)
+                        + "] " + body;
                 sendMessage(SmsManager.getDefault(), profile.number, relayedBody);
+                ForwardingPreferences.setStatus(context,
+                        "Relayed a reply from "
+                                + ShortCodeRelay.formatDestination(activeDestination)
+                                + " to " + profile.number + ".");
                 relayed = true;
             } catch (SecurityException e) {
-                ForwardingPreferences.setStatus(context, "Android denied forwarding the reply.");
+                ForwardingPreferences.setStatus(context,
+                        "Android denied forwarding an active-conversation reply.");
             } catch (RuntimeException e) {
-                ForwardingPreferences.setStatus(context, "Failed to forward the reply.");
+                ForwardingPreferences.setStatus(context,
+                        "Failed to forward an active-conversation reply.");
             }
-        }
-        if (relayed) {
-            ForwardingPreferences.setStatus(context,
-                    "Relayed a reply to the downstream phone with an active conversation.");
         }
         return relayed;
     }
 
     private static boolean hasSendPermission(Context context) {
-        return context.checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED;
+        return context.checkSelfPermission(Manifest.permission.SEND_SMS)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     private static void sendTrackedMessage(Context context, SmsManager smsManager,
@@ -188,7 +246,7 @@ public final class SmsReceiver extends BroadcastReceiver {
             Intent callback = new Intent(context, ForwardDeliveryReceiver.class)
                     .setAction(ForwardDeliveryReceiver.ACTION_FULL_PART_SENT)
                     .putExtra(ForwardDeliveryReceiver.EXTRA_TRANSACTION_ID, transactionId);
-            int requestCode = (transactionId + ":" + i).hashCode();
+            int requestCode = (transactionId + ":full:" + i).hashCode();
             sentIntents.add(PendingIntent.getBroadcast(
                     context,
                     requestCode,
@@ -204,6 +262,40 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
         } catch (RuntimeException e) {
             ForwardDeliveryTracker.cancel(context, transactionId);
+            throw e;
+        }
+    }
+
+    private static void sendTrackedRelayMessage(Context context, SmsManager smsManager,
+                                                String controller, String destination,
+                                                String message) {
+        ArrayList<String> parts = smsManager.divideMessage(message);
+        if (parts.isEmpty()) parts.add(message);
+
+        String transactionId = UUID.randomUUID().toString();
+        RelayDeliveryTracker.start(
+                context, transactionId, parts.size(), controller, destination);
+        ArrayList<PendingIntent> sentIntents = new ArrayList<>(parts.size());
+        for (int i = 0; i < parts.size(); i++) {
+            Intent callback = new Intent(context, RelayDeliveryReceiver.class)
+                    .setAction(RelayDeliveryReceiver.ACTION_RELAY_PART_SENT)
+                    .putExtra(RelayDeliveryReceiver.EXTRA_TRANSACTION_ID, transactionId);
+            int requestCode = (transactionId + ":relay:" + i).hashCode();
+            sentIntents.add(PendingIntent.getBroadcast(
+                    context,
+                    requestCode,
+                    callback,
+                    PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE));
+        }
+
+        try {
+            if (parts.size() == 1) {
+                smsManager.sendTextMessage(destination, null, message, sentIntents.get(0), null);
+            } else {
+                smsManager.sendMultipartTextMessage(destination, null, parts, sentIntents, null);
+            }
+        } catch (RuntimeException e) {
+            RelayDeliveryTracker.cancel(context, transactionId);
             throw e;
         }
     }

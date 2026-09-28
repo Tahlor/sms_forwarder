@@ -1,134 +1,208 @@
 # SMS Forwarder
 
-A small sideload-only Android app that forwards newly received SMS messages to one or more downstream phones and can optionally send bracket-addressed replies back through the forwarding phone.
+A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-## Setup model
+Version **0.2.0 / versionCode 12** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
-Each downstream phone is configured once with two independent policies.
+## Security model
 
-### Incoming messages → downstream
+Each downstream phone now has separate **capabilities** and **preferences**.
 
-Choose one mode:
+### Incoming security authorization
 
-- **All messages**
-- **Secure codes only** — messages containing 6+ consecutive digits (`[0-9]{6,}`)
-- **Selected senders only** — only senders on the incoming allow list
-- **Nothing**
+This is the hard privacy boundary. A phone can be authorized for:
 
-Incoming **Sender rules** provide both an allow list and a block list. The allow list is used by Selected senders only. The block list is enforced in every enabled mode and always wins.
+- **No incoming access**
+- **Any sender**
+- **Selected senders only**
 
-A profile can also send a second SMS containing only the first detected security code for easier copying.
+A sender on the incoming block list is always denied. Automatic forwarding can never expand this authorization.
 
-### Downstream → outgoing SMS
+### Automatic forwarding preference
 
-Choose one mode:
+Inside the incoming authorization, choose:
 
-- **Any number**
-- **Short codes only**
-- **Selected numbers only** — only destinations on the outgoing allow list
-- **Nothing**
+- **Forward nothing**
+- **All authorized messages**
+- **Security codes only**
+- **Selected authorized senders**
 
-Outgoing **Destination rules** likewise provide an allow list and a block list. The block list is always enforced and always wins.
+Effective delivery is always:
 
-To send through the forwarding phone, the downstream phone sends a bracket-addressed SMS to the forwarding phone:
+```text
+incoming security authorization ∩ automatic forwarding preference
+```
+
+This supports both important cases:
+
+- a fully trusted second phone can be authorized for **Any sender** while automatically receiving only **Security codes**;
+- a less-trusted phone can be authorized for only specific senders, and no broader forwarding preference can escape that boundary.
+
+A new phone defaults to **No incoming access** and **No outgoing access**. Broad capabilities are never silently granted.
+
+### Security-code detection
+
+Security-code mode currently matches a run of 6 or more consecutive ASCII digits:
+
+```text
+[0-9]{6,}
+```
+
+If **Send detected code separately for easy copying** is enabled, the app forwards the full authorized message and also sends the first matching digit run as a second SMS.
+
+### Outgoing relay authorization
+
+This is also a security capability, granted independently for each downstream phone:
+
+- **No outgoing access**
+- **Short codes only** — normalized destinations with 3–6 digits
+- **Selected numbers only**
+- **Any number** — any normalized 3–15 digit destination
+
+The outgoing block list always wins.
+
+## Command reference
+
+A relay command must come from a configured downstream phone and begin with a bracketed destination.
+
+Short code:
 
 ```text
 [711711] SAVE
 ```
 
-or, when normal numbers are allowed:
+Normal phone number:
 
 ```text
-[8015551234] Sounds good, see you at 7
+[8552448147] SAVE
 ```
 
-The forwarding phone strips the bracketed destination and sends the payload to that destination.
+The forwarding phone strips the bracketed destination and sends only the payload.
 
-Phone-number rules normalize common formatting differences such as `+1`, spaces, parentheses, and dashes. Incoming alphanumeric sender IDs can also be matched exactly, case-insensitively.
+Common punctuation is ignored while normalizing the destination. The normalized destination must contain 3–15 digits.
+
+An empty payload opens a reply window without sending an SMS:
+
+```text
+[8552448147]
+```
+
+### Relay acknowledgement
+
+For a non-empty relay command, the app waits for Android's carrier send callback. The downstream/controller phone receives an acknowledgement such as:
+
+```text
+[SMS Forwarder]
+Sent to 8552448147. Replies will return for 5 minutes.
+```
+
+or a failure acknowledgement.
+
+Blocked commands are also acknowledged when SEND_SMS permission is available.
 
 ## Reply window
 
-After an allowed bracket-addressed outgoing command, the app keeps a 5-minute return route for that downstream phone. A reply from the destination is sent back to the same downstream phone as:
+After a relay is reported successfully sent, the app keeps a 5-minute return route for that downstream phone. An explicit empty command opens the same window immediately.
+
+A reply from the destination is returned to the downstream phone as:
 
 ```text
-[711-711] <reply text>
+[8552448147] <reply text>
 ```
 
-or the equivalent bracketed normal phone number.
-
-Sending another command refreshes the 5-minute window. A bracketed destination with no payload opens the return window without sending an SMS.
+Sending another command refreshes the 5-minute conversation window.
 
 ## Multiple downstream phones
 
-Multiple downstream phones are supported. Each phone has independent:
+Every phone has independent:
 
-- incoming mode;
-- incoming allow/block lists;
+- incoming security authorization;
+- incoming authorized and blocked sender lists;
+- automatic forwarding preference;
+- optional automatic-forwarding sender list;
 - code-only copy preference;
-- outgoing mode;
+- outgoing relay authorization;
 - outgoing allow/block lists;
 - temporary reply window.
 
-Editing a downstream phone number replaces the original profile rather than accidentally leaving a duplicate behind.
+Editing a phone number replaces its original profile rather than leaving a duplicate.
+
+## In-app Help and diagnostics
+
+The **Help** page is the canonical command/behavior reference. It includes:
+
+- exact command syntax and examples;
+- current permission/profile setup;
+- security authorization versus forwarding preference;
+- security-code matching behavior;
+- outgoing capabilities;
+- 5-minute reply behavior;
+- sideloaded permission instructions;
+- troubleshooting;
+- recent runtime activity.
+
+The runtime activity log is intentionally privacy-limited. It stores routing/result descriptions and addressing metadata only. It does **not** persist message bodies or verification codes, and it is stored outside the backed-up preferences file.
+
+A received SMS now records an **Incoming SMS received** event before filtering. This makes it possible to distinguish:
+
+1. Android never delivered the SMS broadcast to the app;
+2. the app received it but security/preference rules rejected it;
+3. forwarding was queued;
+4. Android later reported a send success/failure.
 
 ## Sideload authorization
 
-The app requests only `RECEIVE_SMS` and `SEND_SMS`. On Android 13+, sideloaded apps can have sensitive permissions blocked by Restricted Settings. The app uses one guided **Authorize SMS access** flow:
+The app requests only:
 
-1. request Receive SMS and Send SMS;
-2. if Android blocks them, explain App Info → top-right `⋮` → **Allow restricted settings**;
-3. automatically retry the SMS permission request when the user returns.
+- `RECEIVE_SMS`
+- `SEND_SMS`
 
-Android does not expose a public API that lets an app silently enable Allow restricted settings itself.
+It does **not** request `READ_SMS` and has no Internet permission.
 
-## UI
+On Android 13+, a sideloaded app can have SMS permissions blocked by Restricted Settings. The app guides:
 
-The main screen is organized around the two directions instead of a grid of feature checkboxes:
+1. Open App Info.
+2. Tap the top-right `⋮` menu.
+3. Choose **Allow restricted settings**.
+4. Return to SMS Forwarder.
+5. Retry the Android SMS permissions.
 
-- compact SMS authorization status;
-- downstream phone selector/editor;
-- **Incoming messages → downstream** dropdown;
-- collapsible **Sender rules**;
-- **Downstream → outgoing SMS** dropdown;
-- collapsible **Destination rules**;
-- help/update/maintenance actions.
+## Appearance and navigation
 
-The **Examples & help** page shows the current setup, permission state, runtime status, forwarding examples, reply syntax, filtering behavior, and restricted-settings instructions.
+The app follows Android's system Light/Dark theme by default, including cards, editor surfaces, Help, dialogs/native controls, and status/navigation bar icon contrast.
 
-## Settings migration and persistence
+Android 15+ edge-to-edge insets are applied so the app content stays clear of the status bar, display cutout, and bottom navigation/gesture area.
 
-Existing profile settings are read compatibly:
+On the main screen:
 
-- legacy forwarding + code-only booleans map to All messages / Secure codes only / Nothing;
-- legacy shortcode relay maps to Short codes only / Nothing;
-- existing downstream phone numbers and code-copy preferences are retained.
+- tapping a phone card or its visible **Edit ›** action opens the editor;
+- Back from the editor returns to the setup screen before leaving the app;
+- Back also collapses the expanded More panel first.
 
-New allow/block lists and directional modes participate in Android backup/restore. Runtime status and active 5-minute reply sessions remain transient and are not backed up.
+## Settings migration
 
-**Delete saved setup** clears all downstream phones, directional rules, and runtime state. It does not revoke Android SMS permissions.
+Existing profiles are migrated conservatively without widening their old behavior:
 
-## Updating the app
+- old **All messages** → authorization **Any sender** + preference **All authorized messages**;
+- old **Security codes only** → authorization **Any sender** + preference **Security codes only**;
+- old **Selected senders only** → authorization **Selected senders** using the old allow list + preference **All authorized messages**;
+- old **Nothing** → no incoming authorization + forwarding off;
+- existing incoming block lists remain hard blocks;
+- existing outgoing modes and allow/block lists retain their meaning.
 
-**Update app** opens:
-
-```text
-https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk
-```
-
-in the device browser. The app itself therefore retains no Internet permission.
-
-Canonical releases must keep application ID `com.tahlor.smsforwarder`, use the same persistent signing certificate, and increase `versionCode`. Release builds fail if the persistent signer is not configured. GitHub Actions debug APKs are build evidence, not the canonical update artifact unless deliberately signed with the same persistent key.
+The next save writes the new model. Profile preferences participate in Android backup/restore. Runtime status, diagnostic activity, delivery tracking, and active reply sessions do not.
 
 ## Privacy / security
 
-- `RECEIVE_SMS` + `SEND_SMS` only.
 - No `READ_SMS`.
 - No Internet permission.
 - No SMS-history scan.
-- No message bodies or verification codes persisted.
-- Full forwarded messages use `[SMS Forwarder]`; already-prefixed messages are ignored to prevent forwarding loops.
-- Outgoing relay requires the sender to match a configured downstream phone and its destination policy.
-- Block lists take precedence over allow lists.
+- No message bodies or verification codes persisted by diagnostics.
+- Full forwarded messages use `[SMS Forwarder]`; already-prefixed acknowledgement messages are ignored to prevent loops.
+- Relay commands execute only for a sender matching a configured downstream phone.
+- Incoming delivery is authorization ∩ preference.
+- Incoming and outgoing block lists take precedence over allows/preferences.
+- New phones start with no security capabilities granted.
 
 ## Build
 
@@ -138,31 +212,20 @@ Requires Java 17-compatible Android build tooling and Android SDK 35.
 gradle testDebugUnitTest assembleDebug
 ```
 
-Canonical release builds use the persistent signer and:
+Canonical releases use the persistent signer:
 
 ```bash
 gradle testDebugUnitTest assembleRelease
 ```
 
-Version: **0.1.10 / versionCode 11**.
-
 ## Automated Archimedes deployment
 
 The Archimedes deployment is intentionally gated and repeatable:
 
-1. The host-side agent bridge fast-forwards a clean `master` checkout from
-   GitHub on its five-minute synchronization interval.
-2. `install/install_archimedes.sh` installs a user-systemd timer. The timer
-   runs `scripts/deploy_archimedes.sh`, which pulls any missed fast-forward,
-   runs the unit tests and signed release build, verifies the package ID,
-   version, and persistent release certificate, and publishes the APK.
-3. A failed deployment remains visible in the systemd journal and can be
-   investigated through the allowlisted `sms_forwarder` repository and
-   `sms_forwarder_deploy` service in agent_bridge. The agent should repair a
-   failure only after inspecting the failure and preserving a clean checkout.
+1. the host-side bridge fast-forwards a **clean** `master` checkout;
+2. `scripts/deploy_archimedes.sh` runs tests and the signed release build;
+3. it verifies package ID, version, and the persistent signer before publishing;
+4. the signed APK is published to the phone-share handoff and to
+   `/var/www/html/apks/sms-code-forwarder-latest.apk`.
 
-The signed APK is published to the restricted phone-share handoff directory
-and to `/var/www/html/apks/sms-code-forwarder-latest.apk`, which is the URL
-opened by **Update app**. The deploy script refuses dirty or divergent
-checkouts and refuses to publish a version code that is not newer than the
-currently public APK.
+The deployment script deliberately refuses dirty or divergent checkouts and refuses to publish a version code that is not newer than the public APK.
