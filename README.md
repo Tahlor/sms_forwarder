@@ -107,7 +107,8 @@ Carrier SMS remains the canonical command transport. Google Messages can switch 
 Version 0.3.1 adds an **opt-in Google Messages notification bridge**:
 
 - the host user explicitly grants Android Notification Access;
-- only Google Messages notifications are inspected;
+- Android's notification-listener permission is broad at the OS level, but this service immediately ignores notifications from packages other than Google Messages;
+- only Google Messages notifications are inspected further;
 - the app considers only text that matches the existing command grammar;
 - a command is executed only when Android exposes a sender `Person` URI with a phone-number scheme and that number matches a configured downstream phone;
 - contact/display names alone are never trusted;
