@@ -24,8 +24,8 @@ android {
         applicationId "com.tahlor.smsforwarder"
         minSdk 23
         targetSdk 35
-        versionCode 15
-        versionName "0.3.0"
+        versionCode 16
+        versionName "0.3.1"
     }
 
     signingConfigs {
