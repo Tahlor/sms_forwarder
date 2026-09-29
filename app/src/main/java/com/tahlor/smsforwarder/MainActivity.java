@@ -257,9 +257,11 @@ public final class MainActivity extends Activity {
         rcsCard.addView(rcsBridgeStatus);
 
         rcsBridgeHelp = body(
-                "Optional compatibility layer for Google Messages. SMS commands still work "
-                        + "normally. With Notification Access enabled, SMS Forwarder can process "
-                        + "an RCS command only when Android exposes a verified sender phone number.");
+                "Optional compatibility layer for Google Messages. Android's Notification "
+                        + "Access permission is broad, but this service immediately ignores "
+                        + "notifications from other apps. SMS commands still work normally. "
+                        + "An RCS command is processed only when Android exposes a verified "
+                        + "sender phone number.");
         rcsBridgeHelp.setTextSize(13);
         rcsBridgeHelp.setPadding(0, dp(4), 0, dp(8));
         rcsCard.addView(rcsBridgeHelp);
