@@ -66,6 +66,9 @@ public final class MainActivity extends Activity {
     private TextView companionHelp;
     private Button pairCompanionButton;
     private TextView removeCompanionLink;
+    private TextView rcsBridgeStatus;
+    private TextView rcsBridgeHelp;
+    private Button rcsBridgeButton;
     private TextView activityStatus;
     private TextView advancedRulesLink;
     private TextView removeEditingLink;
@@ -239,6 +242,32 @@ public final class MainActivity extends Activity {
         companionCard.addView(removeCompanionLink);
 
         content.addView(companionCard, companionParams);
+
+        LinearLayout rcsCard = new LinearLayout(this);
+        rcsCard.setOrientation(LinearLayout.VERTICAL);
+        rcsCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        rcsCard.setBackground(roundedBackground(palette.surface, 16, true));
+        LinearLayout.LayoutParams rcsParams = fullWidth();
+        rcsParams.topMargin = dp(12);
+
+        rcsCard.addView(heading("RCS command bridge", 18));
+        rcsBridgeStatus = body("");
+        rcsBridgeStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        rcsBridgeStatus.setPadding(0, dp(5), 0, 0);
+        rcsCard.addView(rcsBridgeStatus);
+
+        rcsBridgeHelp = body(
+                "Optional compatibility layer for Google Messages. SMS commands still work "
+                        + "normally. With Notification Access enabled, SMS Forwarder can process "
+                        + "an RCS command only when Android exposes a verified sender phone number.");
+        rcsBridgeHelp.setTextSize(13);
+        rcsBridgeHelp.setPadding(0, dp(4), 0, dp(8));
+        rcsCard.addView(rcsBridgeHelp);
+
+        rcsBridgeButton = secondaryButton("Enable notification access");
+        rcsBridgeButton.setOnClickListener(v -> RcsNotificationBridge.openSettings(this));
+        rcsCard.addView(rcsBridgeButton, fullWidth());
+        content.addView(rcsCard, rcsParams);
 
         LinearLayout phonesHeader = new LinearLayout(this);
         phonesHeader.setOrientation(LinearLayout.HORIZONTAL);
@@ -848,6 +877,28 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    private void refreshRcsBridgeStatus() {
+        if (rcsBridgeStatus == null) return;
+        boolean enabled = RcsNotificationBridge.isAccessGranted(this);
+        if (enabled) {
+            rcsBridgeStatus.setText("✓ Notification access enabled");
+            rcsBridgeStatus.setTextColor(palette.success);
+            rcsBridgeHelp.setText(
+                    "Google Messages RCS commands can be bridged only when Android exposes "
+                            + "a verified phone-number identity matching a configured downstream "
+                            + "phone. Display names alone are never trusted.");
+            rcsBridgeButton.setText("Manage notification access");
+        } else {
+            rcsBridgeStatus.setText("Notification access not enabled");
+            rcsBridgeStatus.setTextColor(palette.text);
+            rcsBridgeHelp.setText(
+                    "Carrier-SMS commands already work. Enable this only if you also want "
+                            + "SMS Forwarder to recognize trusted commands that Google Messages "
+                            + "delivers over RCS notifications.");
+            rcsBridgeButton.setText("Enable notification access");
+        }
+    }
+
     private void refreshCompanionStatus() {
         if (companionStatus == null) return;
         if (!CompanionPairing.isSupported(this)) {
@@ -1039,6 +1090,7 @@ public final class MainActivity extends Activity {
         }
 
         refreshCompanionStatus();
+        refreshRcsBridgeStatus();
 
         String status = ForwardingPreferences.status(this);
         activityStatus.setText("Last activity: " + status);
