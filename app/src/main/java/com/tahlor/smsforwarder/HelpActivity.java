@@ -114,9 +114,12 @@ public final class HelpActivity extends Activity {
         addSection(content, "Android permissions",
                 "The app requests RECEIVE_SMS and SEND_SMS only. It does not request READ_SMS and does not have Internet permission. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions.");
 
+        addSection(content, "Companion pairing for protected OTPs",
+                "Android 17 documents connected-device companion apps as exempt from the protected-OTP delay. SMS Forwarder now uses Android's own CompanionDeviceManager association flow rather than a private app flag. On the other phone, open Bluetooth → Pair new device and leave that screen open/discoverable. On this forwarding phone, return to the main SMS Forwarder screen, tap Pair companion phone, and choose the other phone in Android's system chooser. This association is additive: it does not change or delete any phone profile, forwarding rule, relay permission, remote-management setting, or SMS permission. Removing the companion association likewise leaves all SMS Forwarder profiles intact.");
+
         if (Build.VERSION.SDK_INT >= 37) {
             addSection(content, "Android 17 OTP limitation",
-                    "Android 17 can withhold protected OTP messages from ordinary non-default SMS apps for up to 3 hours before SMS_RECEIVED is delivered. This applies to WebOTP-style messages such as a final line like @creditkarma.com #571782 regardless of this app's target SDK. If the rules self-test below says Credit Karma WOULD FORWARD but no “Incoming SMS received” activity appears when the real message arrives, Android withheld the message before SMS Forwarder could inspect it. Making SMS Forwarder the default SMS app would change that behavior but would also replace the normal SMS handler, so this app does not do that automatically.");
+                    "Android 17 can withhold protected OTP messages from ordinary non-default SMS apps for up to 3 hours before SMS_RECEIVED is delivered. This applies to WebOTP-style messages such as a final line like @creditkarma.com #571782 regardless of this app's target SDK. Android explicitly lists connected-device companion apps among the exemptions. Pair the other phone through the Companion protection section, then retest a fresh Credit Karma message. If the rules self-test says Credit Karma WOULD FORWARD but no “Incoming SMS received” activity appears even after the companion association, record that result: it tells us the association did not qualify for the exemption on this device/build and we should not weaken any existing forwarding security to compensate.");
         }
 
         addSection(content, "Host-phone notifications and unread state",
@@ -162,6 +165,8 @@ public final class HelpActivity extends Activity {
         setup.append("Receive SMS: ").append(receive ? "granted" : "MISSING");
         setup.append("\nSend SMS: ").append(send ? "granted" : "MISSING");
         setup.append("\nDownstream phones: ").append(profiles.size());
+        setup.append("\nAndroid companion associations: ")
+                .append(CompanionPairing.associationCount(this));
         for (PhoneProfile profile : profiles) {
             setup.append("\n• ").append(profile.summary());
         }
@@ -187,7 +192,9 @@ public final class HelpActivity extends Activity {
                         .append(profile.permitsIncoming("711711", "711 test message without a code")
                                 ? "WOULD FORWARD" : "BLOCKED BY RULES")
                         .append("; remote admin = ")
-                        .append(profile.allowRemoteCommands ? "ON" : "OFF");
+                        .append(profile.allowRemoteCommands ? "ON" : "OFF")
+                        .append("; companion association = ")
+                        .append(CompanionPairing.hasAssociation(this) ? "ACTIVE" : "NONE");
             }
         }
         TextView testView = body(tests.toString());

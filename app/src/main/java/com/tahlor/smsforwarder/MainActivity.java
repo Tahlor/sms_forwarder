@@ -62,6 +62,10 @@ public final class MainActivity extends Activity {
     private TextView editorTitle;
     private TextView permissionStatus;
     private TextView permissionHelp;
+    private TextView companionStatus;
+    private TextView companionHelp;
+    private Button pairCompanionButton;
+    private TextView removeCompanionLink;
     private TextView activityStatus;
     private TextView advancedRulesLink;
     private TextView removeEditingLink;
@@ -130,6 +134,27 @@ public final class MainActivity extends Activity {
         if (!handleBackNavigation()) super.onBackPressed();
     }
 
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == CompanionPairing.REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                ForwardingPreferences.setStatus(
+                        this, "Android companion association approved.");
+                Toast.makeText(
+                        this,
+                        "Companion association created. Retest a protected OTP.",
+                        Toast.LENGTH_LONG).show();
+            } else {
+                ForwardingPreferences.setStatus(this, "Companion pairing was canceled.");
+            }
+            refreshCompanionStatus();
+            refreshStatus();
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
     private boolean handleBackNavigation() {
         if (editorContainer != null && editorContainer.getVisibility() == View.VISIBLE) {
             hideEditor();
@@ -181,6 +206,39 @@ public final class MainActivity extends Activity {
         authorizeButton = primaryButton("Authorize SMS access");
         authorizeButton.setOnClickListener(v -> requestSmsPermissions(true));
         content.addView(authorizeButton, fullWidth());
+
+        LinearLayout companionCard = new LinearLayout(this);
+        companionCard.setOrientation(LinearLayout.VERTICAL);
+        companionCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        companionCard.setBackground(roundedBackground(palette.surface, 16, true));
+        LinearLayout.LayoutParams companionParams = fullWidth();
+        companionParams.topMargin = dp(16);
+
+        companionCard.addView(heading("Companion protection", 18));
+        companionStatus = body("");
+        companionStatus.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        companionStatus.setPadding(0, dp(5), 0, 0);
+        companionCard.addView(companionStatus);
+
+        companionHelp = body(
+                "For Android 17 protected OTP delivery. On the other phone, open "
+                        + "Bluetooth → Pair new device and leave it discoverable, then pair it here. "
+                        + "This does not change any forwarding or security rules.");
+        companionHelp.setTextSize(13);
+        companionHelp.setPadding(0, dp(4), 0, dp(8));
+        companionCard.addView(companionHelp);
+
+        pairCompanionButton = secondaryButton("Pair companion phone");
+        pairCompanionButton.setOnClickListener(v -> startCompanionPairing());
+        companionCard.addView(pairCompanionButton, fullWidth());
+
+        removeCompanionLink = link("Remove companion pairing");
+        removeCompanionLink.setTextColor(palette.danger);
+        removeCompanionLink.setPadding(dp(2), dp(10), dp(2), dp(2));
+        removeCompanionLink.setOnClickListener(v -> confirmRemoveCompanionPairing());
+        companionCard.addView(removeCompanionLink);
+
+        content.addView(companionCard, companionParams);
 
         LinearLayout phonesHeader = new LinearLayout(this);
         phonesHeader.setOrientation(LinearLayout.HORIZONTAL);
@@ -739,6 +797,95 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
+    private void startCompanionPairing() {
+        CompanionPairing.startAssociation(this, new CompanionPairing.Listener() {
+            @Override
+            public void onAssociationChanged() {
+                runOnUiThread(() -> {
+                    ForwardingPreferences.setStatus(
+                            MainActivity.this, "Android companion association created.");
+                    refreshCompanionStatus();
+                    refreshStatus();
+                });
+            }
+
+            @Override
+            public void onFailure(String message) {
+                runOnUiThread(() -> {
+                    ForwardingPreferences.setStatus(
+                            MainActivity.this, "Companion pairing failed: " + message);
+                    refreshCompanionStatus();
+                    refreshStatus();
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void confirmRemoveCompanionPairing() {
+        int count = CompanionPairing.associationCount(this);
+        if (count <= 0) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Remove companion pairing?")
+                .setMessage(
+                        "This removes SMS Forwarder's Android companion association only. "
+                                + "Your configured phones, forwarding rules, SMS permissions, "
+                                + "and relay settings stay unchanged.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (dialog, which) -> {
+                    try {
+                        CompanionPairing.removeAllAssociations(this);
+                        ForwardingPreferences.setStatus(
+                                this, "Removed Android companion association.");
+                        refreshCompanionStatus();
+                        refreshStatus();
+                    } catch (RuntimeException e) {
+                        ForwardingPreferences.setStatus(
+                                this, "Could not remove Android companion association.");
+                        refreshStatus();
+                    }
+                })
+                .show();
+    }
+
+    private void refreshCompanionStatus() {
+        if (companionStatus == null) return;
+        if (!CompanionPairing.isSupported(this)) {
+            companionStatus.setText("Companion device setup is unavailable on this phone.");
+            companionStatus.setTextColor(palette.muted);
+            companionHelp.setText(
+                    "Existing SMS forwarding still works normally; only Android companion "
+                            + "association is unavailable.");
+            pairCompanionButton.setVisibility(View.GONE);
+            removeCompanionLink.setVisibility(View.GONE);
+            return;
+        }
+
+        int count = CompanionPairing.associationCount(this);
+        if (count > 0) {
+            companionStatus.setText(
+                    "✓ Android companion association active"
+                            + (count > 1 ? " (" + count + " devices)" : ""));
+            companionStatus.setTextColor(palette.success);
+            companionHelp.setText(
+                    "Android now records SMS Forwarder as associated with a companion device. "
+                            + "Android 17 documents connected-device companion apps as exempt "
+                            + "from the protected-OTP delay; verify with a fresh Credit Karma code.");
+            pairCompanionButton.setText("Pair another companion");
+            removeCompanionLink.setVisibility(View.VISIBLE);
+        } else {
+            companionStatus.setText("Not paired as an Android companion app");
+            companionStatus.setTextColor(palette.text);
+            companionHelp.setText(
+                    "Pair the other phone through Android's Companion Device Manager before "
+                            + "retesting protected Credit Karma/WebOTP messages. Existing "
+                            + "forwarding continues unchanged either way.");
+            pairCompanionButton.setText("Pair companion phone");
+            pairCompanionButton.setVisibility(View.VISIBLE);
+            removeCompanionLink.setVisibility(View.GONE);
+        }
+    }
+
     private void confirmDeleteSavedSetup() {
         new AlertDialog.Builder(this)
                 .setTitle("Delete all setup?")
@@ -890,6 +1037,8 @@ public final class MainActivity extends Activity {
             permissionHelp.setVisibility(View.VISIBLE);
             authorizeButton.setVisibility(View.VISIBLE);
         }
+
+        refreshCompanionStatus();
 
         String status = ForwardingPreferences.status(this);
         activityStatus.setText("Last activity: " + status);

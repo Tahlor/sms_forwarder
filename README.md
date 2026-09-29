@@ -2,7 +2,7 @@
 
 A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-Version **0.2.2 / versionCode 14** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
+Version **0.3.0 / versionCode 15** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
 ## Security model
 
@@ -298,6 +298,28 @@ On Android 17, protected OTP messages can be withheld from ordinary non-default 
 @creditkarma.com #571782
 ```
 
-can therefore be delayed before SMS Forwarder sees them, even when this app's own rules would forward them. The in-app Help page includes a rules self-test so this can be distinguished from an app-level filtering failure.
+can therefore be delayed before SMS Forwarder sees them, even when this app's own rules would forward them.
+
+Android's Android 17 behavior-change documentation explicitly lists **connected-device companion apps** among the apps exempt from the OTP delay. Version 0.3.0 adds a real Android `CompanionDeviceManager` association flow:
+
+1. On the other phone, open **Bluetooth → Pair new device** and leave it discoverable.
+2. On the forwarding phone, open SMS Forwarder.
+3. Under **Companion protection**, tap **Pair companion phone**.
+4. Choose the other phone in Android's system companion-device chooser.
+5. The main screen and Help page report whether this package has an active system companion association.
+
+This is intentionally additive. Companion association does **not** modify or replace:
+- configured downstream phone profiles;
+- incoming security authorization;
+- automatic-forwarding preferences;
+- ALLOW/BLOCK/MODE/PREFER rules;
+- outgoing relay permissions;
+- remote management;
+- SMS permissions;
+- PING or bracket relay commands.
+
+Removing the Android companion association also leaves all SMS Forwarder profiles and rules intact.
+
+The exact Credit Karma/WebOTP behavior still requires device verification after association; the app does not claim success merely because an association exists. The Help screen's rules self-test and Recent activity make it possible to distinguish "our rules would forward it" from "Android never delivered the protected SMS broadcast."
 
 SMS Forwarder intentionally does not make itself the default SMS app. As a consequence, it also cannot prevent the default Messages app from storing/notifying on command SMS or mark those messages read.
