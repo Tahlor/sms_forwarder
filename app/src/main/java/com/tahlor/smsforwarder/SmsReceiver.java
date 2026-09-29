@@ -86,14 +86,7 @@ public final class SmsReceiver extends BroadcastReceiver {
                 if (!profile.permitsIncoming(sender, body)) continue;
                 matchedProfiles++;
 
-                boolean duplicateDestination = false;
-                for (String delivered : deliveredDestinations) {
-                    if (ShortCodeRelay.sameAddress(delivered, profile.number)) {
-                        duplicateDestination = true;
-                        break;
-                    }
-                }
-                if (duplicateDestination) {
+                if (containsEquivalentDestination(deliveredDestinations, profile.number)) {
                     ForwardingPreferences.logActivity(context,
                             "Skipped duplicate forwarding profile for " + profile.number + ".");
                     continue;
@@ -563,6 +556,14 @@ public final class SmsReceiver extends BroadcastReceiver {
 
     static String buildForwardedMessage(String displaySender, String body) {
         return FORWARD_PREFIX + " " + displaySender + "\n" + (body == null ? "" : body);
+    }
+
+    static boolean containsEquivalentDestination(List<String> destinations, String candidate) {
+        if (destinations == null) return false;
+        for (String destination : destinations) {
+            if (ShortCodeRelay.sameAddress(destination, candidate)) return true;
+        }
+        return false;
     }
 
     private static int sendTrackedMessage(Context context, SmsManager smsManager,
