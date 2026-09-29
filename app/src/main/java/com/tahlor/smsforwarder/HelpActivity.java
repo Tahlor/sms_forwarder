@@ -78,7 +78,7 @@ public final class HelpActivity extends Activity {
                 "Selected authorized senders — forward only the preferred sender list, and only if those senders are also authorized.");
 
         addSection(content, "Security-code behavior",
-                "Security-code mode recognizes common verification messages: 4–8 digit codes when the message contains authentication language such as code, verification, OTP, PIN, login, security, or do-not-share wording; formatted codes such as 123-456 or 123 456; prefixed codes such as G-123456; and, for backward compatibility, any run of 6 or more consecutive digits. When “Send detected code separately for easy copying” is enabled, the full authorized message is forwarded and the detected code is also sent as a second SMS by itself.");
+                "Security-code mode recognizes common verification messages: 4–8 digit codes when the message contains authentication language such as code, verification, OTP, PIN, login, security, or do-not-share wording; formatted codes such as 123-456 or 123 456; prefixed codes such as G-123456; and, for backward compatibility, any run of 6 or more consecutive digits. The app always forwards the full authorized original text. When “Send detected code separately for easy copying” is enabled, it additionally sends exactly one code-only SMS. The compact [FWD] sender header keeps common OTP messages in one SMS segment when possible.");
 
         addSection(content, "Outgoing relay authorization",
                 "This is a security capability granted to the downstream phone. It is independent of automatic incoming forwarding.");
@@ -89,8 +89,8 @@ public final class HelpActivity extends Activity {
                 "Any number — any normalized 3–15 digit destination is permitted unless blocked.",
                 "Blocked destinations always win.");
 
-        addSection(content, "Remote management by SMS",
-                "Commands must arrive as carrier SMS, not RCS/chat. Remote management is a separate powerful capability and is OFF by default. PING is read-only and works for any configured downstream phone even when remote management is off. Mutating commands require remote management to be explicitly enabled. Commands may optionally start with CMD.");
+        addSection(content, "Remote management and RCS compatibility",
+                "Carrier SMS remains the canonical command path and works without Notification Access. Google Messages may silently choose RCS instead. The optional RCS command bridge uses Android Notification Access to inspect Google Messages conversation notifications. It executes a command only when Android exposes a verified sender phone-number identity that matches a configured downstream phone; a contact/display name alone is never trusted. This is a notification compatibility layer, not direct RCS database access. Remote management remains a separate powerful capability and is OFF by default. PING is read-only; mutating commands require remote management to be explicitly enabled. Commands may optionally start with CMD.");
         addCode(content, "PING");
         addBody(content, "End-to-end transport test. If SMS Forwarder receives the SMS, it replies with the phone's current capability summary. If you get no response, verify the message was sent as SMS rather than RCS/chat and check Recent activity.");
         addCode(content, "AUTH ANY");
@@ -126,10 +126,10 @@ public final class HelpActivity extends Activity {
                 "Because SMS Forwarder is not the default SMS app, it cannot prevent the normal Messages app from storing/notifying on a command SMS or mark that message read. Muting that conversation can stop ringing/notifications, but completely hiding or marking command messages read would require a different architecture such as becoming the default SMS handler.");
 
         addSection(content, "Privacy and diagnostics",
-                "Message bodies and verification codes are not stored in the diagnostic history. The app keeps only a small local runtime activity log with routing/result descriptions and addressing metadata so you can distinguish: SMS never reached the app, SMS reached the app but rules rejected it, send was queued, or Android reported a send failure. Remote-management commands are recorded only as rule/result descriptions, not message bodies. The runtime log is not included in Android backup.");
+                "Message bodies and verification codes are not stored in the diagnostic history. The app keeps only a small local runtime activity log with routing/result descriptions and addressing metadata so you can distinguish: SMS never reached the app, SMS reached the app but rules rejected it, send was queued, or Android reported a send failure. The RCS notification bridge likewise does not persist notification/message bodies; it records only command-routing results. Remote-management commands are recorded only as rule/result descriptions, not message bodies. The runtime log is not included in Android backup.");
 
         addSection(content, "If nothing happened",
-                "First send PING from the downstream phone as carrier SMS, not RCS/chat. A PING reply proves both inbound SMS receipt and outbound SMS sending. Then check Current setup → Rules self-test. For a real incoming SMS, you should see an “Incoming SMS received” event if Android delivered the broadcast to the app. If the self-test says WOULD FORWARD but no receive event appears, the problem is upstream of the app (for example Android 17 OTP protection).");
+                "First send PING as carrier SMS. A PING reply proves inbound SMS receipt and outbound SMS sending. If the sender uses Google Messages and commands are going over RCS, enable the RCS command bridge from the main screen and grant Notification Access. If a command-like RCS notification appears but Android does not expose a verified sender phone number, the app deliberately refuses to execute it and records that diagnostic. Then check Current setup → Rules self-test and Recent activity.");
 
         Button done = new Button(this);
         done.setText("Back to setup");
@@ -167,6 +167,8 @@ public final class HelpActivity extends Activity {
         setup.append("\nDownstream phones: ").append(profiles.size());
         setup.append("\nAndroid companion associations: ")
                 .append(CompanionPairing.associationCount(this));
+        setup.append("\nRCS command bridge: ")
+                .append(RcsNotificationBridge.isAccessGranted(this) ? "ENABLED" : "OFF");
         for (PhoneProfile profile : profiles) {
             setup.append("\n• ").append(profile.summary());
         }
