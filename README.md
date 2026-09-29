@@ -2,7 +2,7 @@
 
 A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-Version **0.3.0 / versionCode 15** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
+Version **0.3.1 / versionCode 16** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
 ## Security model
 
@@ -48,7 +48,7 @@ Security-code mode recognizes common verification messages using two paths:
 - formatted codes such as `123-456` or `123 456`, including prefixed forms such as `G-123456`;
 - for backward compatibility, any run of 6 or more consecutive digits still qualifies.
 
-If **Send detected code separately for easy copying** is enabled, the app forwards the full authorized message and also sends the detected code as a second SMS with separators removed.
+The app always forwards the full authorized original message. The forwarding envelope is compact (`[FWD] sender`) so common OTP messages, including the observed Credit Karma WebOTP, stay within one SMS segment when possible. If **Send detected code separately for easy copying** is enabled, the app additionally sends exactly one code-only SMS with separators removed. Equivalent duplicate destination profiles are suppressed per incoming event so one source message cannot generate duplicate code-only sends to the same phone.
 
 ### Outgoing relay authorization
 
@@ -99,6 +99,23 @@ Sent to 8552448147. Replies will return for 5 minutes.
 or a failure acknowledgement.
 
 Blocked commands are also acknowledged when SEND_SMS permission is available.
+
+## RCS command compatibility
+
+Carrier SMS remains the canonical command transport. Google Messages can switch a conversation back to RCS, in which case `SMS_RECEIVED` never sees commands such as `ALLOW 711711`.
+
+Version 0.3.1 adds an **opt-in Google Messages notification bridge**:
+
+- the host user explicitly grants Android Notification Access;
+- only Google Messages notifications are inspected;
+- the app considers only text that matches the existing command grammar;
+- a command is executed only when Android exposes a sender `Person` URI with a phone-number scheme and that number matches a configured downstream phone;
+- contact/display names alone are never trusted;
+- reposted notifications are deduplicated;
+- notification/RCS message bodies are not persisted;
+- the existing SMS command path works exactly as before even when Notification Access is off.
+
+This is a compatibility layer over conversation notifications, not direct access to the Google Messages RCS database.
 
 ## Remote management by SMS
 
@@ -323,3 +340,8 @@ Removing the Android companion association also leaves all SMS Forwarder profile
 The exact Credit Karma/WebOTP behavior still requires device verification after association; the app does not claim success merely because an association exists. The Help screen's rules self-test and Recent activity make it possible to distinguish "our rules would forward it" from "Android never delivered the protected SMS broadcast."
 
 SMS Forwarder intentionally does not make itself the default SMS app. As a consequence, it also cannot prevent the default Messages app from storing/notifying on command SMS or mark those messages read.
+
+
+## 0.3.1 forwarding reliability
+
+The Credit Karma reproduction exposed a multipart edge case: the old `[SMS Forwarder]\nFrom: ...` envelope could push a roughly 129-character OTP message over the 160-character single-SMS boundary, causing the full forward to take the multipart path while the short code-only copy succeeded. 0.3.1 shortens the envelope to `[FWD] sender\n`, preserves recognition of the legacy marker for loop prevention, reports the number of queued full-message parts, and suppresses equivalent duplicate downstream destinations within one receive event.
