@@ -41,11 +41,16 @@ public final class RcsCommandNotificationListener extends NotificationListenerSe
                 return;
             }
 
+            long now = System.currentTimeMillis();
             if (!IncomingMessageDeduplicator.shouldProcess(
-                    this, "rcs:" + sender, message.getTimestamp(), text,
-                    System.currentTimeMillis())) {
+                    this, "rcs:" + sender, message.getTimestamp(), text, now)) {
                 ForwardingPreferences.logActivity(this,
                         "Ignored a duplicate Google Messages command notification.");
+                return;
+            }
+            if (!CommandDeduplicator.shouldProcess(this, sender, text, now)) {
+                ForwardingPreferences.logActivity(this,
+                        "Ignored a command already handled through SMS or another notification.");
                 return;
             }
 
