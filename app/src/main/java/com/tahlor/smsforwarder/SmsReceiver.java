@@ -71,6 +71,16 @@ public final class SmsReceiver extends BroadcastReceiver {
                 continue;
             }
 
+            boolean looksLikeCommand =
+                    ShortCodeRelay.parseManagementCommand(body) != null
+                            || ShortCodeRelay.parseCommand(body) != null;
+            if (looksLikeCommand
+                    && !CommandDeduplicator.shouldProcess(context, sender, body, now)) {
+                ForwardingPreferences.setStatus(context,
+                        "Ignored a duplicate command received through another messaging path.");
+                continue;
+            }
+
             if (handleDownstreamCommand(context, profiles, sender, body)) continue;
             if (handleActiveReply(context, profiles, sender, body)) continue;
             if (!hasSendPermission(context)) {
