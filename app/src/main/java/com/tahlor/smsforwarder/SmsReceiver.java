@@ -17,7 +17,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class SmsReceiver extends BroadcastReceiver {
-    static final String FORWARD_PREFIX = "[SMS Forwarder]";
+    static final String FORWARD_PREFIX = "[FWD]";
+    static final String LEGACY_FORWARD_PREFIX = "[SMS Forwarder]";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -54,7 +55,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             ForwardingPreferences.logActivity(context,
                     "Incoming SMS received from " + displaySender + "; evaluating rules.");
 
-            if (body.startsWith(FORWARD_PREFIX)) {
+            if (body.startsWith(FORWARD_PREFIX)
+                    || body.startsWith(LEGACY_FORWARD_PREFIX)) {
                 ForwardingPreferences.setStatus(context,
                         "Ignored an SMS Forwarder acknowledgement to prevent a forwarding loop.");
                 continue;
@@ -79,20 +81,37 @@ public final class SmsReceiver extends BroadcastReceiver {
 
             boolean queuedAnywhere = false;
             int matchedProfiles = 0;
+            List<String> deliveredDestinations = new ArrayList<>();
             for (PhoneProfile profile : profiles) {
                 if (!profile.permitsIncoming(sender, body)) continue;
                 matchedProfiles++;
 
-                String forwarded = FORWARD_PREFIX + "\nFrom: " + displaySender + "\n" + body;
+                boolean duplicateDestination = false;
+                for (String delivered : deliveredDestinations) {
+                    if (ShortCodeRelay.sameAddress(delivered, profile.number)) {
+                        duplicateDestination = true;
+                        break;
+                    }
+                }
+                if (duplicateDestination) {
+                    ForwardingPreferences.logActivity(context,
+                            "Skipped duplicate forwarding profile for " + profile.number + ".");
+                    continue;
+                }
+                deliveredDestinations.add(profile.number);
+
+                String forwarded = buildForwardedMessage(displaySender, body);
                 String extractedCode = MessageFilter.extractCode(body);
                 try {
                     SmsManager smsManager = SmsManager.getDefault();
-                    sendTrackedMessage(context, smsManager, profile.number, forwarded);
+                    int partCount = sendTrackedMessage(
+                            context, smsManager, profile.number, forwarded);
                     queuedAnywhere = true;
                     ForwardingPreferences.setStatus(context,
                             "Incoming SMS from " + displaySender
                                     + " matched forwarding rules; full message queued for "
-                                    + profile.number + ".");
+                                    + profile.number + " as " + partCount
+                                    + (partCount == 1 ? " SMS part." : " SMS parts."));
 
                     if (profile.codeCopyFollowup && extractedCode != null) {
                         try {
@@ -128,8 +147,8 @@ public final class SmsReceiver extends BroadcastReceiver {
         }
     }
 
-    private static boolean handleDownstreamCommand(Context context, List<PhoneProfile> profiles,
-                                                   String sender, String body) {
+    static boolean handleDownstreamCommand(Context context, List<PhoneProfile> profiles,
+                                           String sender, String body) {
         PhoneProfile controller = ShortCodeRelay.findRegisteredProfile(profiles, sender);
         if (controller == null) return false;
 
@@ -542,8 +561,12 @@ public final class SmsReceiver extends BroadcastReceiver {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    private static void sendTrackedMessage(Context context, SmsManager smsManager,
-                                           String destination, String message) {
+    static String buildForwardedMessage(String displaySender, String body) {
+        return FORWARD_PREFIX + " " + displaySender + "\n" + (body == null ? "" : body);
+    }
+
+    private static int sendTrackedMessage(Context context, SmsManager smsManager,
+                                          String destination, String message) {
         ArrayList<String> parts = smsManager.divideMessage(message);
         if (parts.isEmpty()) parts.add(message);
 
@@ -572,6 +595,7 @@ public final class SmsReceiver extends BroadcastReceiver {
             ForwardDeliveryTracker.cancel(context, transactionId);
             throw e;
         }
+        return parts.size();
     }
 
     private static void sendTrackedRelayMessage(Context context, SmsManager smsManager,
