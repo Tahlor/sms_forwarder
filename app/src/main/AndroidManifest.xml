@@ -41,6 +41,16 @@
             android:enabled="true"
             android:exported="false" />
 
+        <service
+            android:name=".RcsCommandNotificationListener"
+            android:exported="false"
+            android:label="SMS Forwarder RCS command bridge"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".SmsReceiver"
             android:enabled="true"
