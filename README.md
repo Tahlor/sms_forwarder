@@ -2,7 +2,7 @@
 
 A sideload-only Android app for forwarding newly received SMS messages to trusted downstream phones and for sending bracket-addressed SMS commands back through the forwarding phone.
 
-Version **0.3.1 / versionCode 16** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
+Version **0.3.2 / versionCode 17** separates security authorization from automatic forwarding preferences, adds carrier-result acknowledgements for relay commands, integrates opt-in SMS remote management, broadens verification-code recognition, adds privacy-safe runtime diagnostics, and follows the Android system light/dark theme.
 
 ## Security model
 
@@ -104,7 +104,7 @@ Blocked commands are also acknowledged when SEND_SMS permission is available.
 
 Carrier SMS remains the canonical command transport. Google Messages can switch a conversation back to RCS, in which case `SMS_RECEIVED` never sees commands such as `ALLOW 711711`.
 
-Version 0.3.1 adds an **opt-in Google Messages notification bridge**:
+Version 0.3.2 includes an **opt-in Google Messages notification bridge**:
 
 - the host user explicitly grants Android Notification Access;
 - Android's notification-listener permission is broad at the OS level, but this service immediately ignores notifications from packages other than Google Messages;
@@ -343,6 +343,6 @@ The exact Credit Karma/WebOTP behavior still requires device verification after 
 SMS Forwarder intentionally does not make itself the default SMS app. As a consequence, it also cannot prevent the default Messages app from storing/notifying on command SMS or mark those messages read.
 
 
-## 0.3.1 forwarding reliability
+## 0.3.2 forwarding reliability
 
-The Credit Karma reproduction exposed a multipart edge case: the old `[SMS Forwarder]\nFrom: ...` envelope could push a roughly 129-character OTP message over the 160-character single-SMS boundary, causing the full forward to take the multipart path while the short code-only copy succeeded. 0.3.1 shortens the envelope to `[FWD] sender\n`, preserves recognition of the legacy marker for loop prevention, reports the number of queued full-message parts, and suppresses equivalent duplicate downstream destinations within one receive event.
+The Credit Karma reproduction exposed a multipart edge case: the old `[SMS Forwarder]\nFrom: ...` envelope could push a roughly 129-character OTP message over the 160-character single-SMS boundary, causing the full forward to take the multipart path while the short code-only copy succeeded. 0.3.2 shortens the envelope to `[FWD] sender\n`, preserves recognition of the legacy marker for loop prevention, reports the number of queued full-message parts, and suppresses equivalent duplicate downstream destinations within one receive event.
