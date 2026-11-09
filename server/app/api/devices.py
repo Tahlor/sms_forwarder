@@ -569,7 +569,7 @@ def retry_job(device_id: str, job_id: str):
 @require_device
 def list_notifications(device_id: str):
     status_filter = request.args.get("status", "pending").lower()
-    if status_filter not in ("pending", "completed", "all"):
+    if status_filter not in ("pending", "completed", "failed", "all"):
         status_filter = "pending"
 
     db = get_db()
@@ -651,8 +651,11 @@ def enqueue_notification(device_id: str):
 @require_device
 def acknowledge_notification(device_id: str, notif_id: str):
     data = request.get_json(silent=True) or {}
+    outcome = str(data.get("status", "completed")).lower()
+    if outcome not in ("completed", "failed"):
+        outcome = "failed"
     ack_details = {
-        "status": "completed",
+        "status": outcome,
         "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
         "details": data.get("details")
     }
@@ -670,10 +673,10 @@ def acknowledge_notification(device_id: str, notif_id: str):
         db.execute(
             """
             UPDATE notification_jobs
-            SET status = 'completed', updated_at = datetime('now'), ack_details = ?
+            SET status = ?, updated_at = datetime('now'), ack_details = ?
             WHERE id = ? AND device_id = ?;
             """,
-            (json.dumps(ack_details), notif_id, device_id)
+            (outcome, json.dumps(ack_details), notif_id, device_id)
         )
 
     return jsonify({
@@ -750,14 +753,14 @@ def device_settings(device_id: str):
             "status": "updated",
             "device_id": device_id,
             "label": new_label,
-            "send_opt_in": meta.get("send_opt_in", True),
+            "send_opt_in": meta.get("send_opt_in", False),
             "metadata": meta
         }), 200
 
     return jsonify({
         "device_id": device_id,
         "label": dev["label"],
-        "send_opt_in": meta.get("send_opt_in", True),
+        "send_opt_in": meta.get("send_opt_in", False),
         "metadata": meta
     }), 200
 

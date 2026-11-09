@@ -71,9 +71,15 @@ def get_qr_svg(token: str):
 @pairing_bp.route("/claim", methods=["POST"])
 def claim_pairing():
     data = request.get_json(silent=True) or {}
-    token = data.get("pairing_token", "").strip()
-    device_label = data.get("device_label", "").strip() or "Android Phone"
+    token = str(data.get("pairing_token") or data.get("token") or "").strip()
+    device_label = str(data.get("device_label") or data.get("label") or "").strip() or "Android Phone"
     metadata = data.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata = dict(metadata)
+    metadata.pop("send_opt_in", None)  # Explicit post-pairing consent required.
+    if data.get("phone_number"):
+        metadata["phone_number"] = str(data["phone_number"])
 
     if not token:
         return jsonify({"error": "Missing pairing_token"}), 400

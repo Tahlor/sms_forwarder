@@ -5,6 +5,7 @@ from .api.pairing import pairing_bp
 from .api.devices import devices_bp
 from .api.conversations import conversations_bp
 from .web.admin import admin_bp
+from .connected_client import connected_bp
 
 def create_app(custom_config: Config | None = None) -> Flask:
     cfg = custom_config or config
@@ -26,6 +27,10 @@ def create_app(custom_config: Config | None = None) -> Flask:
     app.register_blueprint(devices_bp)
     app.register_blueprint(conversations_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(connected_bp)
+    # The Connected Android pairing path reuses the same one-time claim handler.
+    app.add_url_rule('/api/device/claim', 'connected_client_claim',
+                     app.view_functions['api_pairing.claim_pairing'], methods=['POST'])
 
     @app.route("/health", methods=["GET"])
     def health():
