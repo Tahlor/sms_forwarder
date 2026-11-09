@@ -77,7 +77,7 @@ def dashboard():
             meta = json.loads(d["metadata"] or "{}")
         except Exception:
             meta = {}
-        d["send_opt_in"] = meta.get("send_opt_in", True) and (meta.get("send_enabled", True) is not False)
+        d["send_opt_in"] = meta.get("send_opt_in") is True and meta.get("send_enabled") is not False
         all_devices.append(d)
 
     active_devices = [d for d in all_devices if not d["revoked_at"]]
@@ -244,7 +244,7 @@ def send_sms():
         meta = json.loads(dev["metadata"] or "{}")
     except Exception:
         meta = {}
-    if meta.get("send_opt_in") is False or meta.get("send_enabled") is False:
+    if meta.get("send_opt_in") is not True or meta.get("send_enabled") is False:
         flash(f"Device '{dev['label']}' has not opted into outbound SMS sending.", "danger")
         return redirect(url_for("web_admin.dashboard", device_id=device_id))
 
