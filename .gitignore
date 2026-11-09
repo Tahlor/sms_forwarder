@@ -7,3 +7,7 @@ app/build/
 captures/
 *.jks
 *.keystore
+
+server/.env
+server/data/
+server/.pytest_cache/
