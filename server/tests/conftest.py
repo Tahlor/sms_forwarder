@@ -59,15 +59,15 @@ def paired_devices(app_config):
     with db_transaction() as db:
         db.execute(
             """
-            INSERT INTO devices (id, label, token_hash, created_at, last_seen_at)
-            VALUES (?, 'Pixel 8 (Work)', ?, datetime('now'), datetime('now'));
+            INSERT INTO devices (id, label, token_hash, created_at, last_seen_at, metadata)
+            VALUES (?, 'Pixel 8 (Work)', ?, datetime('now'), datetime('now'), '{"send_opt_in":true}');
             """,
             (dev1_id, dev1_hash)
         )
         db.execute(
             """
-            INSERT INTO devices (id, label, token_hash, created_at, last_seen_at)
-            VALUES (?, 'Galaxy S23 (Personal)', ?, datetime('now'), datetime('now'));
+            INSERT INTO devices (id, label, token_hash, created_at, last_seen_at, metadata)
+            VALUES (?, 'Galaxy S23 (Personal)', ?, datetime('now'), datetime('now'), '{"send_opt_in":true}');
             """,
             (dev2_id, dev2_hash)
         )
