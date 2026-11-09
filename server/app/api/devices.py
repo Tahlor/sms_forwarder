@@ -19,7 +19,7 @@ def get_device_metadata(dev) -> dict:
 
 def is_send_opted_in(dev) -> bool:
     meta = get_device_metadata(dev)
-    if meta.get("send_opt_in") is False or meta.get("send_enabled") is False:
+    if meta.get("send_opt_in") is not True or meta.get("send_enabled") is False:
         return False
     return True
 
