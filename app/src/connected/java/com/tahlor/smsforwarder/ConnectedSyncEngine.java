@@ -43,6 +43,14 @@ final class ConnectedSyncEngine {
         if (credentials == null) return true;
 
         boolean successful = true;
+        // The phone is the authority for remote-send consent. A paired server
+        // must not be allowed to infer permission merely from device pairing.
+        try {
+            syncServerConsent(context, credentials);
+        } catch (Exception e) {
+            ConnectedOptions.setError(context, safeMessage(e));
+            successful = false;
+        }
         try {
             drainAcknowledgements(context, credentials);
         } catch (Exception e) {
@@ -73,6 +81,15 @@ final class ConnectedSyncEngine {
             ConnectedOptions.setLastSync(context, now);
         }
         return successful;
+    }
+
+    private static void syncServerConsent(Context context,
+                                          ConnectedStore.Credentials credentials) throws Exception {
+        JSONObject settings = new JSONObject();
+        settings.put("send_opt_in", ConnectedOptions.remoteSms(context));
+        ConnectedApi.Response response = ConnectedApi.request(context, credentials,
+                "/api/device/settings", "PATCH", settings);
+        requireOk(response);
     }
 
     private static void uploadEvents(Context context, ConnectedStore.Credentials credentials)
