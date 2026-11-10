@@ -111,8 +111,10 @@ public final class HelpActivity extends Activity {
         addSection(content, "Why security and forwarding are separate",
                 "A fully trusted second phone can be authorized for messages from any sender while automatically receiving only security codes. A less-trusted phone can be authorized for only a few senders; choosing a broader automatic-forwarding preference still cannot expand that authorization.");
 
-        addSection(content, "Android permissions",
-                "The app requests RECEIVE_SMS and SEND_SMS only. It does not request READ_SMS and does not have Internet permission. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions.");
+        String permissionHelp = getPackageName().endsWith(".connected")
+                ? "Connected edition requests RECEIVE_SMS, SEND_SMS, and Internet access for the paired self-hosted server. It does not request READ_SMS. Message uploads, security-code sync, remote SMS sends, and server notifications each require a separate local opt-in. Outside localhost, pairing accepts HTTPS only. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions."
+                : "The app requests RECEIVE_SMS and SEND_SMS only. It does not request READ_SMS and does not have Internet permission. On Android 13+ a sideloaded install may require App Info → top-right ⋮ → Allow restricted settings before Android will grant the SMS permissions.";
+        addSection(content, "Android permissions", permissionHelp);
 
         addSection(content, "Companion pairing for protected OTPs",
                 "Android 17 documents connected-device companion apps as exempt from the protected-OTP delay. SMS Forwarder now uses Android's own CompanionDeviceManager association flow rather than a private app flag. On the other phone, open Bluetooth → Pair new device and leave that screen open/discoverable. On this forwarding phone, return to the main SMS Forwarder screen, tap Pair companion phone, and choose the other phone in Android's system chooser. This association is additive: it does not change or delete any phone profile, forwarding rule, relay permission, remote-management setting, or SMS permission. Removing the companion association likewise leaves all SMS Forwarder profiles intact.");

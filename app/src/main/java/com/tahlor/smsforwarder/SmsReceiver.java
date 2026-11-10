@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public final class SmsReceiver extends BroadcastReceiver {
+public class SmsReceiver extends BroadcastReceiver {
     static final String FORWARD_PREFIX = "[FWD]";
     static final String LEGACY_FORWARD_PREFIX = "[SMS Forwarder]";
 
@@ -33,8 +33,12 @@ public final class SmsReceiver extends BroadcastReceiver {
             if (message == null) continue;
             String sender = message.getOriginatingAddress();
             if (sender == null || sender.isEmpty()) sender = "(unknown sender)";
-            bodiesBySender.computeIfAbsent(sender, ignored -> new StringBuilder())
-                    .append(message.getMessageBody() == null ? "" : message.getMessageBody());
+            StringBuilder body = bodiesBySender.get(sender);
+            if (body == null) {
+                body = new StringBuilder();
+                bodiesBySender.put(sender, body);
+            }
+            body.append(message.getMessageBody() == null ? "" : message.getMessageBody());
             long timestamp = message.getTimestampMillis();
             Long existing = timestampsBySender.get(sender);
             if (existing == null || timestamp < existing) timestampsBySender.put(sender, timestamp);

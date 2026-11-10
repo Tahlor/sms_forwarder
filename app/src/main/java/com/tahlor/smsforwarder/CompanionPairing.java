@@ -9,6 +9,7 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
+import android.annotation.TargetApi;
 
 import java.util.List;
 
@@ -115,6 +116,7 @@ final class CompanionPairing {
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.O)
     private static CompanionDeviceManager manager(Context context) {
         return (CompanionDeviceManager) context.getSystemService(
                 Context.COMPANION_DEVICE_SERVICE);

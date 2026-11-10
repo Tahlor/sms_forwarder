@@ -31,7 +31,7 @@ import android.window.OnBackInvokedDispatcher;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class MainActivity extends Activity {
+public class MainActivity extends Activity {
     private static final int SMS_PERMISSION_REQUEST = 1001;
     private static final String LATEST_APK_URL =
             "https://taylorarchibald.com/apks/sms-code-forwarder-latest.apk";
@@ -172,7 +172,7 @@ public final class MainActivity extends Activity {
         return false;
     }
 
-    private View buildContent() {
+    protected View buildContent() {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(18), dp(20), dp(28));

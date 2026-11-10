@@ -5,6 +5,7 @@ import android.app.Person;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Parcelable;
+import android.annotation.TargetApi;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 
@@ -72,6 +73,7 @@ public final class RcsCommandNotificationListener extends NotificationListenerSe
         }
     }
 
+    @TargetApi(Build.VERSION_CODES.R)
     private static String verifiedPhoneSender(Person person) {
         if (person == null || person.getUri() == null) return null;
         Uri uri = Uri.parse(person.getUri());

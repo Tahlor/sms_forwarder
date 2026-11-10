@@ -31,13 +31,43 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Test and build
-        run: gradle testDebugUnitTest assembleDebug --stacktrace
+      - name: Test and build both editions
+        run: >-
+          gradle testClassicDebugUnitTest testConnectedDebugUnitTest
+          assembleClassicDebug assembleConnectedDebug
+          lintClassicDebug lintConnectedDebug --stacktrace
+
+      - name: Verify flavor manifest permissions and package IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          classic_manifest="$(find app/build/intermediates -type f -path '*/classicDebug/processClassicDebugMainManifest/AndroidManifest.xml' -print -quit)"
+          connected_manifest="$(find app/build/intermediates -type f -path '*/connectedDebug/processConnectedDebugMainManifest/AndroidManifest.xml' -print -quit)"
+          test -f "$classic_manifest"
+          test -f "$connected_manifest"
+          if grep -q 'android.permission.INTERNET' "$classic_manifest"; then
+            echo 'Classic manifest unexpectedly requests INTERNET' >&2
+            exit 1
+          fi
+          grep -q 'android.permission.INTERNET' "$connected_manifest"
+          if grep -q 'android.permission.READ_SMS' "$classic_manifest" "$connected_manifest"; then
+            echo 'An edition unexpectedly requests SMS-history access' >&2
+            exit 1
+          fi
+          grep -q 'android:allowBackup="false"' "$connected_manifest"
+          sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt="$(find "$sdk_dir/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          classic_package="$("$aapt" dump badging app/build/outputs/apk/classic/debug/app-classic-debug.apk | sed -nE "s/^package: name='([^']+)'.*/\1/p" | head -n 1)"
+          connected_package="$("$aapt" dump badging app/build/outputs/apk/connected/debug/app-connected-debug.apk | sed -nE "s/^package: name='([^']+)'.*/\1/p" | head -n 1)"
+          test "$classic_package" = "com.tahlor.smsforwarder"
+          test "$connected_package" = "com.tahlor.smsforwarder.connected"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: sms-code-forwarder-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/classic/debug/app-classic-debug.apk
+            app/build/outputs/apk/connected/debug/app-connected-debug.apk
           if-no-files-found: error
           retention-days: 30

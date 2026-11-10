@@ -81,7 +81,7 @@ apksigner="$(find "$sdk_dir/build-tools" -maxdepth 2 -type f -name apksigner -pr
 [[ -x "$apksigner" ]] || fail "Android apksigner was not found below $sdk_dir/build-tools"
 
 artifact_name="sms-code-forwarder-${version_name}.apk"
-artifact="$REPO_ROOT/app/build/outputs/apk/release/app-release.apk"
+artifact="$REPO_ROOT/app/build/outputs/apk/classic/release/app-classic-release.apk"
 
 if [[ -f "$deployed_sha_file" ]] && [[ "$(tr -d '[:space:]' < "$deployed_sha_file")" == "$head_sha" ]] \
         && [[ -f "$PUBLIC_DIR/sms-code-forwarder-latest.apk" ]] \
@@ -117,7 +117,7 @@ fi
 
 log "building $version_name (versionCode $version_code) from $head_sha"
 rm -f "$artifact"
-"$gradle_bin" --no-daemon --console=plain -p "$REPO_ROOT" testDebugUnitTest assembleRelease
+"$gradle_bin" --no-daemon --console=plain -p "$REPO_ROOT" testClassicDebugUnitTest assembleClassicRelease
 [[ -f "$artifact" ]] || fail "Gradle completed without producing $artifact"
 
 changes="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)"
@@ -154,7 +154,7 @@ release_tmp="$HANDOFF_DIR/.RELEASE.md.tmp.$$"
     printf '# SMS Code Forwarder %s\n\n' "$version_name"
     printf -- '- Commit: `%s`\n' "$head_sha"
     printf -- '- Version code: `%s`\n' "$version_code"
-    printf -- '- Build: `testDebugUnitTest assembleRelease`\n'
+    printf -- '- Build: `testClassicDebugUnitTest assembleClassicRelease`\n'
     printf -- '- APK: `%s`\n' "$artifact_name"
     printf -- '- SHA-256: `%s`\n' "$sha256"
     printf '\nThe APK is persistently signed for update-in-place installation.\n'

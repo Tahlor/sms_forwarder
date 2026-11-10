@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:allowBackup="false"
+        android:label="SMS Code Forwarder Connected"
+        android:networkSecurityConfig="@xml/connected_network_security_config"
+        android:usesCleartextTraffic="true"
+        tools:replace="android:allowBackup,android:label,android:usesCleartextTraffic">
+
+        <activity
+            android:name=".MainActivity"
+            tools:node="remove" />
+
+        <activity
+            android:name=".ConnectedMainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smsbridge" android:host="pair" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ConnectedSettingsActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".SmsReceiver"
+            tools:node="remove" />
+
+        <receiver
+            android:name=".ConnectedSmsReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".SmsResultReceiver"
+            android:enabled="true"
+            android:exported="false" />
+    </application>
+</manifest>
