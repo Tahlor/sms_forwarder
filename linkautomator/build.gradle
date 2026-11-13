@@ -15,7 +15,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    lint { abortOnError true }
+    lint {
+        abortOnError true
+        textReport true
+        textOutput 'stdout'
+    }
 }
 dependencies {
     testImplementation 'junit:junit:4.13.2'
