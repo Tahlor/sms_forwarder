@@ -37,6 +37,13 @@ jobs:
           assembleClassicDebug assembleConnectedDebug :linkautomator:assembleDebug
           lintClassicDebug lintConnectedDebug :linkautomator:lintDebug --stacktrace
 
+      - name: Print Link Automator lint report
+        if: always()
+        shell: bash
+        run: |
+          report="linkautomator/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if test -f "$report"; then cat "$report"; else echo "Lint report not generated"; fi
+
       - name: Verify Link Automator permission boundary
         shell: bash
         run: |
