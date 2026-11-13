@@ -3,6 +3,7 @@ package com.tahlor.smslinkautomator;
 import android.app.Activity;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -20,6 +21,7 @@ public final class RuleEditorActivity extends Activity {
     private EditText name, sender, hosts, phrase, duration;
     private CheckBox always, auto;
     private RadioGroup mode;
+    private int browserId;
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + 0.5f); }
     private EditText field(LinearLayout root, String label, String value, boolean number) {
         TextView title = new TextView(this);
@@ -70,14 +72,16 @@ public final class RuleEditorActivity extends Activity {
         root.addView(action);
         mode = new RadioGroup(this);
         RadioButton http = new RadioButton(this);
-        http.setId(1001);
+        int httpId = View.generateViewId();
+        http.setId(httpId);
         http.setText("Background HTTPS GET (reliable request; no JavaScript/cookies)");
         mode.addView(http);
         RadioButton browser = new RadioButton(this);
-        browser.setId(1002);
+        browserId = View.generateViewId();
+        browser.setId(browserId);
         browser.setText("Launch browser (may be blocked by Android in background)");
         mode.addView(browser);
-        mode.check(Rule.MODE_BROWSER.equals(r.mode) ? 1002 : 1001);
+        mode.check(Rule.MODE_BROWSER.equals(r.mode) ? browserId : httpId);
         root.addView(mode);
         TextView warning = new TextView(this);
         warning.setText("A link is followed only if the sender and exact approved host match, and either Always is on or the timed window is active. The heads-up SMS only arms the window. Changes to sender, hosts or phrase cancel the current timed window.");
@@ -115,7 +119,7 @@ public final class RuleEditorActivity extends Activity {
             Toast.makeText(this, "Enter a duration in minutes.", Toast.LENGTH_LONG).show();
             return;
         }
-        r.mode = mode.getCheckedRadioButtonId() == 1002 ? Rule.MODE_BROWSER : Rule.MODE_HTTP;
+        r.mode = mode.getCheckedRadioButtonId() == browserId ? Rule.MODE_BROWSER : Rule.MODE_HTTP;
         String error = RuleEngine.validate(r);
         if (error != null) {
             Toast.makeText(this, error, Toast.LENGTH_LONG).show();
