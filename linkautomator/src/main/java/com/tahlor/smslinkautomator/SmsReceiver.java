@@ -28,14 +28,15 @@ public final class SmsReceiver extends BroadcastReceiver {
             if (!messages.containsKey(sender)) messages.put(sender, new StringBuilder());
             messages.get(sender).append(part.getMessageBody() == null ? "" : part.getMessageBody());
             long t = part.getTimestampMillis();
-            timestamps.put(sender, Math.min(timestamps.getOrDefault(sender, t), t));
+            Long previous = timestamps.get(sender);
+            timestamps.put(sender, previous == null ? t : Math.min(previous, t));
         }
         PendingResult pending = goAsync();
         Context application = context.getApplicationContext();
         WORKER.execute(() -> {
             try {
                 for (Map.Entry<String, StringBuilder> entry : messages.entrySet()) {
-                    process(application, entry.getKey(), timestamps.getOrDefault(entry.getKey(), 0L),
+                    process(application, entry.getKey(), (timestamps.containsKey(entry.getKey()) ? timestamps.get(entry.getKey()) : 0L),
                             entry.getValue().toString());
                 }
             } finally {
