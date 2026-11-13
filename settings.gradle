@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SmsCodeForwarder"
-include ":app"
+include ":app", ":linkautomator"

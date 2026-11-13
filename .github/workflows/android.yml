@@ -33,9 +33,22 @@ jobs:
 
       - name: Test and build both editions
         run: >-
-          gradle testClassicDebugUnitTest testConnectedDebugUnitTest
-          assembleClassicDebug assembleConnectedDebug
-          lintClassicDebug lintConnectedDebug --stacktrace
+          gradle testClassicDebugUnitTest testConnectedDebugUnitTest :linkautomator:testDebugUnitTest
+          assembleClassicDebug assembleConnectedDebug :linkautomator:assembleDebug
+          lintClassicDebug lintConnectedDebug :linkautomator:lintDebug --stacktrace
+
+      - name: Verify Link Automator permission boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$(find linkautomator/build/intermediates -type f -path '*/debug/processDebugMainManifest/AndroidManifest.xml' -print -quit)"
+          test -f "$manifest"
+          grep -q 'android.permission.RECEIVE_SMS' "$manifest"
+          grep -q 'android.permission.INTERNET' "$manifest"
+          if grep -qE 'android.permission.(SEND_SMS|READ_SMS|BIND_ACCESSIBILITY_SERVICE|SYSTEM_ALERT_WINDOW)' "$manifest"; then
+            echo 'Link Automator requested unexpected privileged permissions' >&2
+            exit 1
+          fi
 
       - name: Verify flavor manifest permissions and package IDs
         shell: bash
@@ -69,5 +82,6 @@ jobs:
           path: |
             app/build/outputs/apk/classic/debug/app-classic-debug.apk
             app/build/outputs/apk/connected/debug/app-connected-debug.apk
+            linkautomator/build/outputs/apk/debug/linkautomator-debug.apk
           if-no-files-found: error
           retention-days: 30
