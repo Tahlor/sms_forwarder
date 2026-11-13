@@ -82,7 +82,9 @@ public final class RuleStore {
 
     public static synchronized void remove(Context ctx, String id) {
         List<Rule> rules = get(ctx);
-        rules.removeIf(r -> r.id.equals(id));
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            if (rules.get(i).id.equals(id)) rules.remove(i);
+        }
         save(ctx, rules);
     }
 
