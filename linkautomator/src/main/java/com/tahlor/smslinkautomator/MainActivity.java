@@ -3,6 +3,7 @@ package com.tahlor.smslinkautomator;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Typeface;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -56,7 +57,7 @@ public final class MainActivity extends Activity {
     }
     private void section(String label) {
         TextView t = text(label, 18);
-        t.setTypeface(null, 1);
+        t.setTypeface(null, Typeface.BOLD);
         content.addView(t);
     }
     private void refresh() {
@@ -88,7 +89,7 @@ public final class MainActivity extends Activity {
             LinearLayout item = column();
             item.setPadding(dp(8), dp(8), dp(8), dp(8));
             TextView title = text(r.name + "  ·  " + r.sender, 17);
-            title.setTypeface(null, 1);
+            title.setTypeface(null, Typeface.BOLD);
             item.addView(title);
             item.addView(text("Allowed HTTPS hosts: " + r.allowedHosts, 13));
             CheckBox always = new CheckBox(this);
