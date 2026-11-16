@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish updated SMS Link Automator master releases to Hub 2 APK Library
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+RandomizedDelaySec=45s
+Persistent=true
+Unit=sms-link-automator-deploy.service
+
+[Install]
+WantedBy=timers.target

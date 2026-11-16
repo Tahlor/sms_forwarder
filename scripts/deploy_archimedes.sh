@@ -90,6 +90,18 @@ if [[ -f "$deployed_sha_file" ]] && [[ "$(tr -d '[:space:]' < "$deployed_sha_fil
     exit 0
 fi
 
+# Link Automator commits must not trigger failures in the independent Forwarder
+# release gate. If its own source has not changed, leave the existing signed
+# Forwarder APK untouched; keep the last actual Forwarder commit as the baseline.
+if [[ -f "$deployed_sha_file" && -f "$PUBLIC_DIR/sms-code-forwarder-latest.apk" ]]; then
+    old_forwarder_sha="$(tr -d '[:space:]' < "$deployed_sha_file")"
+    if git -C "$REPO_ROOT" cat-file -e "$old_forwarder_sha^{commit}" 2>/dev/null &&
+       git -C "$REPO_ROOT" diff --quiet "$old_forwarder_sha" "$head_sha" -- app/; then
+        log "no SMS Forwarder source changes; the Link Automator publisher handles its own release"
+        exit 0
+    fi
+fi
+
 deployed_version_code=""
 if [[ -f "$PUBLIC_DIR/sms-code-forwarder-latest.apk" ]]; then
     deployed_version_code="$("$aapt" dump badging "$PUBLIC_DIR/sms-code-forwarder-latest.apk" 2>/dev/null | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p" | head -n 1 || true)"

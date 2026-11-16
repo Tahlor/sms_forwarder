@@ -1,6 +1,20 @@
 plugins {
     id 'com.android.application'
 }
+
+// Use the same protected, persistent signing setup as the sibling SMS Forwarder.
+// Do not add credentials or keystores to this repository.
+def signingProps = new Properties()
+def propsFile = rootProject.file('local.properties')
+if (propsFile.exists()) {
+    propsFile.withInputStream { stream -> signingProps.load(stream) }
+}
+def signPath = signingProps.getProperty('release.storeFile') ?: System.getenv('SMS_FORWARDER_KEYSTORE')
+def signPassword = signingProps.getProperty('release.storePassword') ?: System.getenv('SMS_FORWARDER_STORE_PASSWORD')
+def signAlias = signingProps.getProperty('release.keyAlias') ?: System.getenv('SMS_FORWARDER_KEY_ALIAS')
+def keyPassword = signingProps.getProperty('release.keyPassword') ?: System.getenv('SMS_FORWARDER_KEY_PASSWORD')
+def hasSigning = [signPath, signPassword, signAlias, keyPassword].every { it != null && !it.isBlank() }
+
 android {
     namespace 'com.tahlor.smslinkautomator'
     compileSdk 35
@@ -8,16 +22,39 @@ android {
         applicationId 'com.tahlor.smslinkautomator'
         minSdk 23
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 2
+        versionName '0.1.1'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        release {
+            if (hasSigning) {
+                storeFile rootProject.file(signPath)
+                storePassword signPassword
+                keyAlias signAlias
+                keyPassword keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasSigning) signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
     lint {
         abortOnError true
         textReport true
+    }
+}
+tasks.configureEach { task ->
+    if (task.name == 'assembleRelease' || task.name == 'bundleRelease') {
+        task.doFirst {
+            if (!hasSigning) throw new GradleException('Persistent release signing is not configured')
+        }
     }
 }
 dependencies {

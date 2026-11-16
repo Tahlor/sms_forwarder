@@ -85,7 +85,8 @@ public final class SmsReceiver extends BroadcastReceiver {
             }
         }
         if (!senderMatched) {
-            // Do not even log unknown SMS senders: app processes only configured contacts.
+            // Privacy-safe reception evidence: no body or address persisted.
+            RuleStore.log(context, "Incoming SMS received but no configured sender matched");
         }
     }
 }

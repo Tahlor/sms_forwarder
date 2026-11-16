@@ -125,6 +125,11 @@ public final class MainActivity extends Activity {
             } else {
                 item.addView(text(r.alwaysOn ? "Active indefinitely" : "Not currently following links", 14));
             }
+            item.addView(button("Test rule safely", v -> {
+                Intent test = new Intent(this, SelfTestActivity.class);
+                test.putExtra("id", r.id);
+                startActivity(test);
+            }));
             item.addView(button("Edit rule", v -> {
                 Intent edit = new Intent(this, RuleEditorActivity.class);
                 edit.putExtra("id", r.id);
@@ -138,7 +143,7 @@ public final class MainActivity extends Activity {
         content.addView(button("+ Add sender rule", v -> startActivity(new Intent(this, RuleEditorActivity.class))));
         section("Recent activity");
         List<String> logs = RuleStore.logs(this);
-        if (logs.isEmpty()) content.addView(text("No activity yet. Send an SMS to a configured sender to test.", 13));
+        if (logs.isEmpty()) content.addView(text("No activity yet. Run a self-test or send an SMS from a second phone.", 13));
         int count = 0;
         for (String event : logs) {
             if (++count > 12) break;

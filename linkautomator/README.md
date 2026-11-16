@@ -53,3 +53,19 @@ APK output: `linkautomator/build/outputs/apk/debug/linkautomator-debug.apk`. The
 5. Repeated heads-up resets expiry from the latest trigger; manual disarm and disabling auto-arm stop timed visits.
 6. Unknown sender, wrong host, HTTP link, deceptive subdomain, IP literal, disallowed redirect, or duplicate SMS: no request.
 7. Test unlocked, locked, screen off, and after reboot on the Pixel 11. Verify execution by a controlled test endpoint rather than trusting an HTTP status or browser-launch request. Background browser mode is not guaranteed.
+
+## Hub 2 / APK Library delivery
+
+The canonical release artifact is a **persistently signed** release APK, not the GitHub debug artifact. On Archimedes the separate guarded publisher `scripts/deploy_linkautomator.sh` builds, verifies package/version/signature, and atomically publishes both a versioned APK and `sms-link-automator-latest.apk` under `/home/ubuntu/phone_share/apks/sms_link_automator/`. Hub 2's existing APK tile points to the SSO-protected `/apk_downloads/` service, which reads that directory; no duplicate web service is needed.
+
+Once installed, `sms-link-automator-deploy.timer` checks new `master` revisions every five minutes. Commits that do not change this Android module do not cause a rebuild. A changed module requires a higher version code. The legacy SMS Forwarder publisher separately detects when its module is unchanged. Never bypass signature checking or promote CI debug artifacts as the latest release.
+
+**Direct authenticated download:** https://taylorarchibald.com/apk_downloads/download/sms_link_automator/sms-link-automator-latest.apk
+
+## Built-in testing
+
+Open a rule and tap **Test rule safely**. The offline flow verifies blocked-before-heads-up, timed arming, suppression of links in the triggering text, subsequent-link eligibility, automatic expiry, approved/denied hosts, and Always-on independence. This never sends SMS, visits a URL or changes live settings.
+
+Optional **Visit entered URL once** makes a real request only after you supply a full URL belonging to the rule's approved host list. Use a harmless test endpoint—not an actual giveaway link.
+
+For full radio-path testing, add a temporary rule with the sender number of **another phone you control** and a harmless HTTPS host. Send the heads-up and then the link SMS from that phone; verify the live activity log. Self-SMS delivery may never reach the received-SMS broadcast, and your own sender cannot impersonate the real `34653` shortcode.
