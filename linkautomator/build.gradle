@@ -12,8 +12,8 @@ if (propsFile.exists()) {
 def signPath = signingProps.getProperty('release.storeFile') ?: System.getenv('SMS_FORWARDER_KEYSTORE')
 def signPassword = signingProps.getProperty('release.storePassword') ?: System.getenv('SMS_FORWARDER_STORE_PASSWORD')
 def signAlias = signingProps.getProperty('release.keyAlias') ?: System.getenv('SMS_FORWARDER_KEY_ALIAS')
-def keyPassword = signingProps.getProperty('release.keyPassword') ?: System.getenv('SMS_FORWARDER_KEY_PASSWORD')
-def hasSigning = [signPath, signPassword, signAlias, keyPassword].every { it != null && !it.isBlank() }
+def releaseKeyPassword = signingProps.getProperty('release.keyPassword') ?: System.getenv('SMS_FORWARDER_KEY_PASSWORD')
+def hasSigning = [signPath, signPassword, signAlias, releaseKeyPassword].every { it != null && !it.isBlank() }
 
 android {
     namespace 'com.tahlor.smslinkautomator'
@@ -35,7 +35,7 @@ android {
                 storeFile rootProject.file(signPath)
                 storePassword signPassword
                 keyAlias signAlias
-                keyPassword keyPassword
+                keyPassword releaseKeyPassword
             }
         }
     }
