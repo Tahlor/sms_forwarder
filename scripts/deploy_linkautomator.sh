@@ -77,12 +77,25 @@ if [[ -n "$gradle_bin" ]]; then
 elif [[ -x "$REPO_ROOT/gradlew" ]]; then
     gradle_bin="$REPO_ROOT/gradlew"
 else
-    gradle_bin="$(command -v gradle || true)"
-    if [[ -z "$gradle_bin" ]]; then
-        gradle_bin="$(find "$HOME/.gradle/wrapper/dists" -maxdepth 6 -type f -path '*/bin/gradle' -print 2>/dev/null | sort -V | tail -n 1 || true)"
+    system_gradle="$(command -v gradle || true)"
+    system_major=""
+    if [[ -x "$system_gradle" ]]; then
+        system_major="$("$system_gradle" --version 2>/dev/null | sed -nE 's/^Gradle ([0-9]+).*/\1/p' | head -n 1 || true)"
+        if [[ "$system_major" =~ ^[0-9]+$ ]] && (( system_major >= 8 )); then
+            gradle_bin="$system_gradle"
+        fi
     fi
-    [[ -x "$gradle_bin" ]] || fail 'Gradle 8+ not installed; set SMS_FORWARDER_GRADLE'
+    if [[ -z "$gradle_bin" ]]; then
+        gradle_bin="$(find "$HOME/.gradle/wrapper/dists" "$HOME/.sdkman/candidates/gradle" \
+            /opt/gradle /opt/gradle-8.9 /usr/local/gradle -maxdepth 6 \
+            -type f -path '*/bin/gradle' -print 2>/dev/null | sort -V | tail -n 1 || true)"
+    fi
+    [[ -x "$gradle_bin" ]] || fail "Gradle 8+ not found (system Gradle is ${system_major:-unknown}); set SMS_FORWARDER_GRADLE"
 fi
+selected_version="$("$gradle_bin" --version 2>/dev/null | sed -nE 's/^Gradle ([0-9]+).*/\1/p' | head -n 1 || true)"
+[[ "$selected_version" =~ ^[0-9]+$ ]] && (( selected_version >= 8 )) ||
+    fail "selected Gradle is too old: ${selected_version:-unknown}"
+log "using Gradle $("$gradle_bin" --version | sed -n 's/^Gradle /Gradle /p' | head -n 1)"
 
 log "building signed release $version_name code=$version_code commit=$head_sha"
 rm -f "$release"
