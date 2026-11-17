@@ -64,7 +64,7 @@ Once installed, `sms-link-automator-deploy.timer` checks new `master` revisions 
 
 ## Built-in testing
 
-Open a rule and tap **Test rule safely**. The offline flow verifies blocked-before-heads-up, timed arming, suppression of links in the triggering text, subsequent-link eligibility, automatic expiry, approved/denied hosts, and Always-on independence. This never sends SMS, visits a URL or changes live settings.
+Tap **Run one-tap self-test** on the home screen. It runs automatically with the built-in sample, requires no configuration or SMS permission, and displays 12 PASS/FAIL checks covering sender matching, arming, link allowlisting and expiry. It never transmits SMS or follows a real URL, so it cannot verify radio delivery or a promotion claim. Open a rule and tap **Test rule safely** to test that rule specifically. The offline flow verifies blocked-before-heads-up, timed arming, suppression of links in the triggering text, subsequent-link eligibility, automatic expiry, approved/denied hosts, and Always-on independence. This never sends SMS, visits a URL or changes live settings.
 
 Optional **Visit entered URL once** makes a real request only after you supply a full URL belonging to the rule's approved host list. Use a harmless test endpoint—not an actual giveaway link.
 
