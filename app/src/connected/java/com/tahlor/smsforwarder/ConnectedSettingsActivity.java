@@ -46,7 +46,10 @@ public final class ConnectedSettingsActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         setTitle("Self-hosted server");
-        setContentView(buildContent());
+        View content = buildContent();
+        setContentView(content);
+        UiPalette palette = UiPalette.from(this);
+        SystemBars.configure(this, content, palette.background, palette.dark);
         String uri = getIntent().getStringExtra(ConnectedMainActivity.EXTRA_PAIRING_URI);
         if (uri == null && getIntent().getData() != null) uri = getIntent().getData().toString();
         if (uri != null) pairingUri.setText(uri);

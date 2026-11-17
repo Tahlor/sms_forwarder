@@ -31,6 +31,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Enforce screen-safe Android layouts
+        run: python3 scripts/check_android_safe_areas.py
+
       - name: Test and build both editions
         run: >-
           gradle testClassicDebugUnitTest testConnectedDebugUnitTest :linkautomator:testDebugUnitTest
