@@ -49,6 +49,7 @@ public final class RuleEditorActivity extends Activity {
         root.setPadding(dp(18), dp(12), dp(18), dp(20));
         scroll.addView(root);
         setContentView(scroll);
+        EdgeToEdge.apply(this, scroll);
         TextView heading = new TextView(this);
         heading.setText(existing == null ? "Add a rule" : "Edit " + r.name);
         heading.setTextSize(22);

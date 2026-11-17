@@ -37,6 +37,7 @@ public final class SelfTestActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad);
         scroll.addView(layout);
         setContentView(scroll);
+        EdgeToEdge.apply(this, scroll);
         TextView title = text("Test " + selected.name, 23);
         layout.addView(title);
         layout.addView(text("The simulation is offline and does not change your live rule, send SMS, or visit links.", 14));

@@ -67,6 +67,7 @@ public final class MainActivity extends Activity {
         content.setPadding(padding, padding, padding, padding);
         scroll.addView(content);
         setContentView(scroll);
+        EdgeToEdge.apply(this, scroll);
         section("SMS Link Automator");
         content.addView(text("Automatically visit eligible links from trusted SMS senders. No tap needed. Rules start disabled.", 14));
         boolean hasPermission = Build.VERSION.SDK_INT < 23 ||
@@ -81,6 +82,10 @@ public final class MainActivity extends Activity {
             }));
         }
 
+        section("Test");
+        content.addView(button("Run one-tap self-test", v ->
+                startActivity(new Intent(this, SelfTestActivity.class))));
+        content.addView(text("No setup required. Tests the sample SMS rules locally, without sending texts or opening websites.", 13));
         section("Rules");
         List<Rule> rules = RuleStore.get(this);
         if (rules.isEmpty()) content.addView(text("No rules configured.", 14));
