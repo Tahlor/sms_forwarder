@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="@color/sms_icon_background" android:pathData="M0,0 L108,0 L108,108 L0,108 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M32,29 L76,29 C81,29 84,33 84,38 L84,65 C84,70 80,73 75,73 L48,73 L35,81 L35,73 L32,73 C27,73 24,69 24,65 L24,38 C24,33 27,29 32,29 Z"/>
+    <path android:fillColor="@color/sms_icon_background" android:pathData="M42,45 L59,45 L54,40 L58,36 L72,50 L58,64 L54,60 L59,55 L42,55 Z"/>
+</vector>
